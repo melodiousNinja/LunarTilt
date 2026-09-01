@@ -108,8 +108,9 @@ func _test_game_state() -> void:
 	_expect(gs.coins == c0 + 50, "match win pays out")
 	_expect(gs.total_matches == 1 and gs.total_wins == 1, "match stats increment")
 
+	var gs_path := gs._path
 	gs.free()
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(gs._path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(gs_path))
 ## ----------------------------------------------------------------- Store --
 
 func _test_store() -> void:
