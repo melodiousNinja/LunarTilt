@@ -33,6 +33,8 @@ func _ready() -> void:
 	add_child(world)
 	world.ball_captured.connect(_on_ball_captured)
 	world.ball_guttered.connect(_on_ball_guttered)
+	_build_env()
+	_build_lights()
 	_build_camera()
 	_build_guide()
 	_build_hud()
@@ -74,7 +76,23 @@ var _resolve_timer := 0.0
 const _RESOLVE_DELAY := 4.5
 
 
+# Capture mode: `-- --capture` (non-headless) renders {n} frames, saves a
+# screenshot to res://artifacts/frame_capture.png, then quits. Used as a
+# visual regression gate since headless runs never render a frame.
+var capture_mode := "--capture" in OS.get_cmdline_user_args()
+var _capture_frames := 0
+const _CAPTURE_AFTER := 210
+
+
 func _process(delta: float) -> void:
+	if capture_mode:
+		_capture_frames += 1
+		if _capture_frames == _CAPTURE_AFTER:
+			var img := get_viewport().get_texture().get_image()
+			var err := img.save_png("res://artifacts/frame_capture.png")
+			print("CAPTURE_SAVE_ERR=", err)
+			get_tree().quit()
+		return
 	if pending_resolve and active_ball == null:
 		_resolve_timer += delta
 		if _resolve_timer >= _RESOLVE_DELAY:
@@ -159,12 +177,59 @@ func _color_name(c: String) -> String:
 
 # ---------------------------------------------------------------- visuals
 
+## Broadcast-lounge ambiance: soft dark studio backdrop with warm horizon,
+## plus ambient light sourced from the sky so unlit faces still read clearly.
+func _build_env() -> void:
+	var env_n := WorldEnvironment.new()
+	env_n.name = "Environment"
+	var wenv := Environment.new()
+	wenv.background_mode = Environment.BG_SKY
+	var sky := Sky.new()
+	var psky := ProceduralSkyMaterial.new()
+	psky.sky_top_color = Color(0.10, 0.11, 0.15)
+	psky.sky_horizon_color = Color(0.42, 0.36, 0.30)
+	psky.ground_bottom_color = Color(0.07, 0.07, 0.09)
+	psky.ground_horizon_color = Color(0.34, 0.30, 0.27)
+	sky.sky_material = psky
+	wenv.sky = sky
+	wenv.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	wenv.ambient_light_energy = 0.9
+	wenv.ambient_light_color = Color(1.0, 0.95, 0.88)
+	env_n.environment = wenv
+	add_child(env_n)
+
+
+## Key light simulating a studio fixture above the table + a cool fill to
+## lift shadowed ball faces (foundation for the room-lighting cosmetics).
+func _build_lights() -> void:
+	var sun := DirectionalLight3D.new()
+	sun.name = "KeyLight"
+	sun.shadow_enabled = true
+	sun.light_color = Color(1.0, 0.96, 0.86)
+	sun.light_energy = 1.7
+	sun.rotation_degrees = Vector3(-58.0, 24.0, 0.0)
+	add_child(sun)
+	var fill := OmniLight3D.new()
+	fill.name = "FillLight"
+	fill.position = Vector3(1.25, 0.7, -0.55)
+	fill.light_color = Color(0.78, 0.84, 1.0)
+	fill.light_energy = 0.4
+	fill.omni_range = 6.0
+	add_child(fill)
+
+
+## Camera frames the whole slope like the broadcast edit: positioned in front
+## of the player end and looking at the table center (yaw/pitch derived from
+## the look_target, so it can never aim away from the board again).
 func _build_camera() -> void:
 	cam = Camera3D.new()
-	cam.position = Vector3(0.35, 1.7, -0.4)
-	cam.rotation_degrees = Vector3(-46.0, 0.0, 0.0)
+	cam.name = "Camera3D"
+	cam.position = Vector3(0.25, 1.6, -0.95)
 	cam.fov = 55.0
+	cam.near = 0.05
+	cam.far = 60.0
 	add_child(cam)
+	cam.look_at(Vector3(0.0, 0.02, 1.02), Vector3.UP)
 
 
 func _build_guide() -> void:

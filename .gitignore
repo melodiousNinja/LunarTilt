@@ -10,6 +10,7 @@ tools/
 
 # Build artifacts
 build/
+artifacts/
 *.aab
 *.apk
 *.keystore

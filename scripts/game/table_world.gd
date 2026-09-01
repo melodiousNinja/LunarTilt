@@ -166,6 +166,22 @@ func build() -> void:
 			add_child(s)
 			slots.append({"pos": pi, "area": s, "color": ""})
 
+			# Visible pocket: a thin recessed plate per slot so the band reads
+			# on camera. Color-coded by position (1/2/5 -> gold/silver/red).
+			var plate_mesh := MeshInstance3D.new()
+			var plate_bm := BoxMesh.new()
+			plate_bm.size = Vector3(SLOT_W - 0.020, 0.010, SLOT_D - 0.010)
+			plate_mesh.mesh = plate_bm
+			plate_mesh.rotation.x = board.rotation.x
+			plate_mesh.position = Vector3(x, s.position.y - 0.004, POS_Z[pi])
+			var plate_mat := StandardMaterial3D.new()
+			var pos_colors := [Color(0.85, 0.72, 0.30), Color(0.80, 0.82, 0.88), Color(0.72, 0.30, 0.28)]
+			plate_mat.albedo_color = pos_colors[pi]
+			plate_mat.metallic = 0.45
+			plate_mat.roughness = 0.35
+			plate_mesh.material_override = plate_mat
+			add_child(plate_mesh)
+
 	# --- Gutter strip past the far position ---
 	gutter = Area3D.new()
 	var gcs := CollisionShape3D.new()
