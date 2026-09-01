@@ -1,5 +1,11 @@
 ; Engine configuration file.
-; Lunar Tilt - Star Ball Duels
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
 config_version=5
 
 [application]
@@ -23,26 +29,21 @@ window/size/viewport_height=900
 window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
 
-[physics]
+[dotnet]
 
-common/physics_ticks_per_second=60
-common/max_physics_steps_per_frame=8
-3d/default_gravity=9.81
-3d/default_gravity_vector=Vector3(0, -1, 0)
-3d/physics_engine="JoltPhysics"
-
-[rendering]
-
-renderer/rendering_method="mobile"
-renderer/rendering_method.mobile="mobile"
-renderer/textures/vram_compression/import_etc2_astc=true
+project/assembly_name="LunarTilt"
 
 [input_devices]
 
 pointing/emulate_touch_from_mouse=true
 
-[dotnet]
+[physics]
 
-project/assembly_name="LunarTilt"
+3d/physics_engine="JoltPhysics"
+3d/default_gravity=9.81
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/textures/vram_compression/import_etc2_astc=true
