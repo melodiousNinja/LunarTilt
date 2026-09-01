@@ -15,6 +15,16 @@ const ROLL_DAMP := 0.05  # smooth phenolic roll; resistance comes from the
 
 var color: String = "red"
 
+var _mesh_instance: MeshInstance3D = null
+var _mat: StandardMaterial3D = null
+
+## Broadcast highlight: when true the ball pulses a warm emission so the
+## player always knows exactly which ball is in hand.
+var is_active := false:
+	set(value):
+		is_active = value
+		_sync_emphasis()
+
 
 func _ready() -> void:
 	# Everything is configured in create() before entering the tree.
@@ -22,6 +32,22 @@ func _ready() -> void:
 	# physics space (Jolt re-registers the body, and if it is a hair's width
 	# inside the board it tunnels straight through).
 	pass
+
+
+func _process(_delta: float) -> void:
+	if is_active and _mat != null:
+		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.006)
+		_mat.emission_energy_multiplier = 0.7 + pulse * 1.5
+
+
+func _sync_emphasis() -> void:
+	if _mat == null:
+		return
+	if is_active:
+		_mat.emission_enabled = true
+		_mat.emission = Color(1.0, 0.92, 0.5)
+	else:
+		_mat.emission_enabled = false
 
 
 func configure_material() -> void:
@@ -39,14 +65,20 @@ func configure_material() -> void:
 	sm.height = RADIUS_M * 2.0
 	var mat := StandardMaterial3D.new()
 	if color == "red":
-		mat.albedo_color = Color(0.85, 0.12, 0.08)
+		mat.albedo_color = Color(0.84, 0.14, 0.09)
 	else:
-		mat.albedo_color = Color(0.10, 0.10, 0.10)
-	mat.roughness = 0.25       # gloss: lacquered phenolic
+		mat.albedo_color = Color(0.09, 0.09, 0.09)
+	# Lacquered phenolic: tight gloss + clearcoat micro-glints + specular sheen.
+	mat.roughness = 0.10
 	mat.metallic = 0.0
+	mat.clearcoat = 0.6
+	mat.clearcoat_roughness = 0.08
 	mesh.mesh = sm
 	mesh.material_override = mat
 	add_child(mesh)
+	_mesh_instance = mesh
+	_mat = mat
+	_sync_emphasis()
 
 
 func set_mass_properties() -> void:

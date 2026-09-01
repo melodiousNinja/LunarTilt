@@ -2,6 +2,7 @@ extends Node3D
 ## Lunar Tilt - main gameplay scene.
 
 const WorldScript := preload("res://scripts/game/table_world.gd")
+const CameraRigScript := preload("res://scripts/game/camera_rig.gd")
 
 var world: TableWorld
 var cam: Camera3D
@@ -26,6 +27,16 @@ var label_turn: Label
 var label_msg: Label
 var hud_root: Control
 
+# Camera framing (v2 aspect-aware rig)
+const CAM_FOV := 62.0
+const LOOK_TARGET := Vector3(0.0, 0.02, 0.98)
+var _camera_base_fov := CAM_FOV
+
+# Broadcast juice state
+var _vignette: ColorRect
+var _msg_tween: Tween = null
+var _fov_punch := 0.0
+
 
 func _ready() -> void:
 	world = WorldScript.new()
@@ -33,6 +44,7 @@ func _ready() -> void:
 	add_child(world)
 	world.ball_captured.connect(_on_ball_captured)
 	world.ball_guttered.connect(_on_ball_guttered)
+	world.ball_returned.connect(_on_ball_returned)
 	_build_env()
 	_build_lights()
 	_build_camera()
@@ -93,6 +105,10 @@ func _process(delta: float) -> void:
 			print("CAPTURE_SAVE_ERR=", err)
 			get_tree().quit()
 		return
+	if _fov_punch > 0.0:
+		_fov_punch = maxf(0.0, _fov_punch - delta * 6.0)
+		if cam != null:
+			cam.fov = _camera_base_fov + _fov_punch
 	if pending_resolve and active_ball == null:
 		_resolve_timer += delta
 		if _resolve_timer >= _RESOLVE_DELAY:
@@ -166,6 +182,20 @@ func _on_ball_guttered(_ball: SCBBall) -> void:
 	_pass_turn()
 
 
+func _on_ball_returned(ball: SCBBall) -> void:
+	## Real-sport rule: a ball that rolls back off the player end returns to the
+	## shooter's rack instead of vanishing. Restore the hand count and, if it is
+	## the active color's ball, immediately hand it back for another flick.
+	world.reinsert_hand_ball(ball)
+	hand_counts[ball.color] += 1
+	pending_resolve = false
+	_resolve_timer = 0.0
+	_msg("%s ball back in hand" % _color_name(ball.color))
+	_update_hud()
+	if ball.color == active_color:
+		_give_active_ball()
+
+
 func _score_slot(slot_index: int) -> int:
 	var sd: Dictionary = world.slot_at(slot_index)
 	return [1, 2, 5][sd["pos"]]
@@ -187,16 +217,33 @@ func _build_env() -> void:
 	var sky := Sky.new()
 	var psky := ProceduralSkyMaterial.new()
 	psky.sky_top_color = Color(0.10, 0.11, 0.15)
-	psky.sky_horizon_color = Color(0.42, 0.36, 0.30)
+	psky.sky_horizon_color = Color(0.50, 0.44, 0.40)
 	psky.ground_bottom_color = Color(0.07, 0.07, 0.09)
-	psky.ground_horizon_color = Color(0.34, 0.30, 0.27)
+	psky.ground_horizon_color = Color(0.44, 0.38, 0.33)
 	sky.sky_material = psky
 	wenv.sky = sky
 	wenv.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	wenv.ambient_light_energy = 0.9
+	wenv.ambient_light_energy = 1.15
 	wenv.ambient_light_color = Color(1.0, 0.95, 0.88)
 	env_n.environment = wenv
 	add_child(env_n)
+	# Broadcast-grade post + stage floor (v2): ACES tonemap, subtle glow,
+	# and a dark floor so the table reads as furniture on a set, not void.
+	wenv.tonemap_mode = Environment.TONE_MAPPER_ACES
+	wenv.glow_enabled = true
+	wenv.glow_intensity = 0.30
+	wenv.glow_bloom = 0.08
+	wenv.glow_hdr_threshold = 0.9
+	var floor := MeshInstance3D.new()
+	var fm := PlaneMesh.new()
+	fm.size = Vector2(14.0, 14.0)
+	floor.mesh = fm
+	var fmat := StandardMaterial3D.new()
+	fmat.albedo_color = Color(0.020, 0.022, 0.026)
+	fmat.roughness = 0.98
+	floor.material_override = fmat
+	floor.position = Vector3(0.0, -0.21, 1.0)
+	add_child(floor)
 
 
 ## Key light simulating a studio fixture above the table + a cool fill to
@@ -206,16 +253,24 @@ func _build_lights() -> void:
 	sun.name = "KeyLight"
 	sun.shadow_enabled = true
 	sun.light_color = Color(1.0, 0.96, 0.86)
-	sun.light_energy = 1.7
+	sun.light_energy = 2.1
 	sun.rotation_degrees = Vector3(-58.0, 24.0, 0.0)
 	add_child(sun)
 	var fill := OmniLight3D.new()
 	fill.name = "FillLight"
 	fill.position = Vector3(1.25, 0.7, -0.55)
 	fill.light_color = Color(0.78, 0.84, 1.0)
-	fill.light_energy = 0.4
+	fill.light_energy = 0.55
 	fill.omni_range = 6.0
 	add_child(fill)
+	# Rim light behind the far end - lifts the oak edge off the dark backdrop.
+	var rim := OmniLight3D.new()
+	rim.name = "RimLight"
+	rim.position = Vector3(0.0, 0.45, 2.5)
+	rim.light_color = Color(1.0, 0.92, 0.8)
+	rim.light_energy = 0.55
+	rim.omni_range = 3.2
+	add_child(rim)
 
 
 ## Camera frames the whole slope like the broadcast edit: positioned in front
@@ -224,12 +279,28 @@ func _build_lights() -> void:
 func _build_camera() -> void:
 	cam = Camera3D.new()
 	cam.name = "Camera3D"
-	cam.position = Vector3(0.25, 1.6, -0.95)
-	cam.fov = 55.0
 	cam.near = 0.05
 	cam.far = 60.0
 	add_child(cam)
-	cam.look_at(Vector3(0.0, 0.02, 1.02), Vector3.UP)
+	_reframe_camera()
+
+
+## Aspect-aware framing (v2): binary-search the closest camera distance so the
+## whole frame (racks + tray + table + gutter) fits the device aspect exactly.
+func _reframe_camera() -> void:
+	if cam == null:
+		return
+	var vp := get_viewport()
+	var vr := vp.get_visible_rect().size
+	var aspect := float(vr.x) / maxf(vr.y, 1.0)
+	_camera_base_fov = CAM_FOV
+	var pitch := CameraRigScript.pitch_for_aspect(aspect)
+	var pts: Array = TableWorld.frame_points()
+	var dist := CameraRigScript.fit_distance(pts, CAM_FOV, aspect, pitch, LOOK_TARGET)
+	cam.position = CameraRigScript.cam_pos(pitch, dist, LOOK_TARGET)
+	cam.look_at(LOOK_TARGET, Vector3.UP)
+	cam.fov = _camera_base_fov
+	print("CAM aspect=", aspect, " pitch=", pitch, " dist=", dist)
 
 
 func _build_guide() -> void:
@@ -289,19 +360,38 @@ func _build_hud() -> void:
 	hud_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(hud_root)
 
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0, 0, 0, 0.5)
-	style.set_corner_radius_all(10)
-	style.content_margin_left = 14
-	style.content_margin_right = 14
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
+	var pill := StyleBoxFlat.new()
+	pill.bg_color = Color(0.02, 0.02, 0.03, 0.66)
+	pill.set_corner_radius_all(14)
+	pill.content_margin_left = 14
+	pill.content_margin_right = 14
+	pill.content_margin_top = 7
+	pill.content_margin_bottom = 7
 
-	label_red = _add_label("Red 0", Color(1, 0.5, 0.4), Vector2(16, 16), style)
-	label_black = _add_label("Black 0", Color(0.9, 0.92, 1.0), Vector2(16, 66), style)
-	label_turn = _add_label("Turn: Red", Color.WHITE, Vector2(16, 116), style)
-	label_msg = _add_label("Aim: drag from the tray ball, then release", Color(1, 0.95, 0.7), Vector2(16, 180), null)
-	label_msg.custom_minimum_size = Vector2(560, 0)
+	label_red = _add_label("Red 0", Color(1.0, 0.45, 0.35), Vector2(14, 16), pill)
+	label_red.set_anchors_preset(Control.PRESET_TOP_LEFT)
+
+	label_black = _add_label("Black 0", Color(0.85, 0.90, 1.0), Vector2(-150, 16), pill)
+	# Right-aligned via the TOP_RIGHT anchor; position.x is measured from right edge.
+	label_black.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	label_black.size = Vector2(120, 44)
+
+	label_turn = _add_label("Turn: Red", Color.WHITE, Vector2(-130, 16), pill)
+	label_turn.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	label_turn.position = Vector2(-130, 16)
+	label_turn.size = Vector2(260, 44)
+
+	label_msg = _add_label("Aim: drag from the ball, release to flick", Color(1.0, 0.95, 0.75), Vector2(-300, 118), null)
+	label_msg.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	label_msg.position = Vector2(-300, 118)
+	label_msg.size = Vector2(600, 0)
+	label_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	_vignette = ColorRect.new()
+	_vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_vignette.color = Color(1.0, 0.1, 0.05, 0.0)
+	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_root.add_child(_vignette)
 	_update_hud()
 
 
@@ -312,22 +402,68 @@ func _add_label(text: String, color: Color, pos: Vector2, style: StyleBoxFlat) -
 	l.add_theme_font_size_override("font_size", 26)
 	if style != null:
 		l.add_theme_stylebox_override("normal", style)
-	l.position = pos
-	l.size = Vector2(420, 44)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hud_root.add_child(l)
 	return l
 
 
 func _update_hud() -> void:
-	if label_red == null or not is_inside_tree():
+	if not is_inside_tree():
 		return
 	label_red.text = "Red  %d" % scores["red"]
 	label_black.text = "Black  %d" % scores["black"]
 	label_turn.text = "Turn: %s  |  In hand: %d" % [_color_name(active_color), hand_counts[active_color]]
-	label_turn.add_theme_color_override("font_color", Color(1, 0.5, 0.4) if active_color == "red" else Color(0.9, 0.92, 1.0))
+	label_turn.add_theme_color_override("font_color", Color(1, 0.45, 0.35) if active_color == "red" else Color(0.85, 0.9, 1.0))
 
 
 func _msg(t: String) -> void:
-	if label_msg != null:
-		label_msg.text = t
-		label_msg.reset_size()
+	if label_msg == null:
+		return
+	label_msg.text = t
+	label_msg.modulate.a = 1.0
+	if _msg_tween != null:
+		_msg_tween.kill()
+	_msg_tween = create_tween()
+	_msg_tween.tween_interval(1.6)
+	_msg_tween.tween_property(label_msg, "modulate:a", 0.45, 0.5)
+
+
+# ------------------------------------------------------------- broadcast juice --
+
+func _score_juice(world_pos: Vector3, pts: int) -> void:
+	_fov_punch = 2.2
+	_flash(Color(1.0, 0.95, 0.85), 0.14)
+	if OS.has_feature("mobile"):
+		Input.vibrate_handheld(15)
+	if world_pos != Vector3.ZERO and cam != null:
+		var sp := cam.unproject_position(world_pos)
+		var t := ("+%d" % pts)
+		var l := Label.new()
+		l.text = t
+		l.add_theme_font_size_override("font_size", 44)
+		l.add_theme_color_override("font_color", Color(1.0, 0.92, 0.5))
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		l.position = sp
+		l.size = Vector2(120, 50)
+		hud_root.add_child(l)
+		var tw := create_tween()
+		tw.tween_property(l, "position:y", sp.y - 72.0, 0.8).set_trans(Tween.TRANS_QUAD)
+		tw.parallel().tween_property(l, "modulate:a", 0.0, 0.8)
+		tw.finished.connect(l.queue_free)
+
+
+func _gutter_juice() -> void:
+	_fov_punch = 1.5
+	_flash(Color(1.0, 0.08, 0.05), 0.22)
+	if OS.has_feature("mobile"):
+		Input.vibrate_handheld(45)
+
+
+func _flash(v: Color, a: float) -> void:
+	if _vignette == null:
+		return
+	_vignette.color = Color(v.r, v.g, v.b, a)
+	var tw := create_tween()
+	tw.tween_property(_vignette, "color:a", 0.0, 0.45)
