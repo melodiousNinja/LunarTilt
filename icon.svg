@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="bg" cx="40%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#1b2a4a"/>
+      <stop offset="55%" stop-color="#0d1626"/>
+      <stop offset="100%" stop-color="#04070d"/>
+    </radialGradient>
+    <radialGradient id="ball" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ff9d6b"/>
+      <stop offset="45%" stop-color="#e84a2a"/>
+      <stop offset="100%" stop-color="#8f1508"/>
+    </radialGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="url(#bg)"/>
+  <g fill="none" stroke="#ffd27a" stroke-width="3" stroke-linejoin="round" opacity="0.9">
+    <path d="M64 18 L72 50 L104 58 L72 66 L64 98 L56 66 L24 58 L56 50 Z"/>
+  </g>
+  <circle cx="64" cy="60" r="26" fill="url(#ball)"/>
+  <circle cx="55" cy="50" r="7" fill="#ffffff" opacity="0.55"/>
+  <text x="64" y="120" font-family="sans-serif" font-size="13" fill="#9fb4d8" text-anchor="middle" font-weight="bold">LUNAR TILT</text>
+</svg>

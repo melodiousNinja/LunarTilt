@@ -1,0 +1,25 @@
+# Godot 4
+.godot/
+*.translation
+export.cfg
+export_credentials.cfg
+*.tmp
+
+# Local engine toolchain (downloaded, not committed)
+tools/
+
+# Build artifacts
+build/
+*.aab
+*.apk
+*.keystore
+*.der
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vs/
+.idea/
+.vscode/*
+!.vscode/launch.json
+*.log
