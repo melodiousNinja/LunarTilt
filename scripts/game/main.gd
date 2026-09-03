@@ -110,8 +110,12 @@ func _release_shot(screen_pos: Vector2) -> void:
 	active_ball.is_active = false
 	_resolve_elapsed = 0.0
 	var power := clampf(len * SLING_K, MIN_POWER, GUTTER_POWER_LIMIT)
-	# Pulling down-screen (-Y) launches up-slope (+Z); lateral pull throws wide.
-	var dir := Vector3(-pull.x, 0.0, -pull.y).normalized()
+	# FIX: ball ALWAYS launches up-table (+Z). Drag distance = power; horizontal
+	# drag = aim angle. Pull down OR flick up both fire up the slope, so a shot
+	# can never fire backward into the tray (old sign logic did).
+	var lateral := clampf(pull.x / maxf(len, 0.001), -0.85, 0.85)
+	var angle := asin(lateral)
+	var dir := Vector3(sin(angle), 0.0, cos(angle)).normalized()
 	active_ball.linear_velocity = dir * power
 	world.track_live(active_ball)
 	active_ball = null
@@ -128,8 +132,9 @@ func _update_guide(screen_pos: Vector2) -> void:
 		return
 	var power := clampf(len * SLING_K, MIN_POWER, GUTTER_POWER_LIMIT)
 	_update_power_meter(power)
-	# Screen-Y is down-positive, so world +Z (up-screen) == -screen Y.
-	var angle := atan2(-pull.x, -pull.y)
+	# Same launch math as _release_shot: direction toward the target.
+	var lateral := clampf(pull.x / maxf(len, 0.001), -0.85, 0.85)
+	var angle := asin(lateral)
 	_draw_trajectory(active_ball.position, angle, power)
 
 
