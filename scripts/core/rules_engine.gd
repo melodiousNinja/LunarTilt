@@ -106,3 +106,30 @@ static func shot_scored(shot_slots: Array) -> bool:
 		if s != "":
 			return true
 	return false
+
+
+## OFFICIAL GROUPING decision for a ball settling on socket `col` of a
+## position whose sockets hold `occupancy` ("" / "red" / "black", column
+## order). Returns { action: "claim"|"displace"|"block",
+##                    displace_col: int (-1 none),
+##                    keep_shooting: bool }.
+##   - EMPTY socket, no same-colour neighbour  -> claim; the ball STAYS on the
+##     table as a blocker and the turn passes.
+##   - Same-colour ball in an ADJACENT socket (or already in the target) ->
+##     that ball returns to its owner's rack (displacement) and the shooter
+##     KEEPS shooting.
+##   - Socket walled by the other colour with no own neighbour -> the ball
+##     rests against it as a grouping wall; no score, turn passes.
+static func resolve_socket(occupancy: Array, col: int, color: String) -> Dictionary:
+	var n := occupancy.size()
+	if col < 0 or col >= n:
+		return {"action": "block", "displace_col": -1, "keep_shooting": false}
+	for nb in [col - 1, col + 1]:
+		if nb >= 0 and nb < n and String(occupancy[nb]) == color:
+			return {"action": "displace", "displace_col": nb, "keep_shooting": true}
+	var occ := String(occupancy[col])
+	if occ == "":
+		return {"action": "claim", "displace_col": -1, "keep_shooting": false}
+	if occ == color:
+		return {"action": "displace", "displace_col": col, "keep_shooting": true}
+	return {"action": "block", "displace_col": -1, "keep_shooting": false}

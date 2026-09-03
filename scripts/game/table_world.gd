@@ -18,9 +18,11 @@ extends Node3D
 ##   * Returned-ball rule: balls that roll back off the player end land in the
 ##     front tray and are returned to the shooter's rack.
 
-signal ball_scored(ball: SCBBall, band: int)
+signal ball_scored(ball: SCBBall, band: int, keep_shooting: bool)
 signal ball_guttered(ball: SCBBall)
 signal ball_returned(ball: SCBBall)
+signal ball_displaced(ball: SCBBall)
+signal ball_grouped(ball: SCBBall)
 
 const TABLE_LEN := 2.2      # Z axis (player end at Z=0, far end at Z=2.2)
 const TABLE_WID := 1.2      # X axis
@@ -268,17 +270,20 @@ func build() -> void:
 
 	# --- Scoring pockets: the star-edged troughs (THE table fix) ---
 	_build_pockets(wood_mat)
-func _build_pockets(wood_mat: StandardMaterial3D) -> void:
-	## Three full-width slot bands, FLAT on the felt.
-	## Capture is purely speed-gated: a ball that settles inside a slot band
-	## is caught; a fast ball skims past. (v3 first tried recessed wells;
-	## Jolt box edges ate so much energy a fast ball died at band one.)
+const POS_GLOW := [Color(0.93, 0.75, 0.22), Color(0.82, 0.85, 0.92), Color(0.78, 0.25, 0.22)]
+const CLAIM_GLOW := {"red": Color(0.95, 0.25, 0.18), "black": Color(0.55, 0.58, 0.65)}
+
+
+func _build_pockets(_wood_mat: StandardMaterial3D) -> void:
+	## The official ASTROLABE look: 21 discrete socket pockets (7 per
+	## position), each with a dark comb separator on its edges and hooked
+	## teeth at the front lip - the classic Star Cluster Ball table.
+	## Physics stays FLAT (v3 proved Jolt box edges eat ball energy): capture
+	## is purely the speed-gated Area3D per socket. Each socket keeps its own
+	## emissive plate material so a claim recolours it to the owner's ball.
 	for bi in range(POS_Z.size()):
 		var cz: float = POS_Z[bi]
 		var sy: float = surface_y_at(0.0, cz)          # felt height at band
-		# Slot lanes (7 per band) with a gentle star glow so the value of each
-		# lane reads on a phone: gold 1, silver 2, crimson 3 - colour-coded.
-		var glow_colors := [Color(0.93, 0.75, 0.22), Color(0.82, 0.85, 0.92), Color(0.78, 0.25, 0.22)]
 		for si in range(SLOTS_PER_POS):
 			var hx := slot_center_x(si)
 			var area := Area3D.new()
@@ -292,47 +297,56 @@ func _build_pockets(wood_mat: StandardMaterial3D) -> void:
 			area.collision_mask = 2
 			area.monitoring = true
 			add_child(area)
-			slots.append({"band": bi, "area": area, "color": ""})
+			slots.append({"band": bi, "col": si, "area": area, "color": ""})
 
-			# Glow plate recessed in the well floor.
+			# Emissive socket plate - recolours when a ball claims it.
 			var plate_mesh := MeshInstance3D.new()
 			var plate_bm := BoxMesh.new()
 			plate_bm.size = Vector3(SLOT_PITCH * 0.80, 0.01, SLOT_W * 0.55)
 			plate_mesh.mesh = plate_bm
 			var plate_mat := StandardMaterial3D.new()
-			plate_mat.albedo_color = glow_colors[bi] * 0.5
+			plate_mat.albedo_color = POS_GLOW[bi] * 0.5
 			plate_mat.metallic = 0.3
 			plate_mat.roughness = 0.3
 			plate_mat.emission_enabled = true
-			plate_mat.emission = glow_colors[bi]
+			plate_mat.emission = POS_GLOW[bi]
 			plate_mat.emission_energy_multiplier = 1.4
 			plate_mesh.material_override = plate_mat
-			plate_mesh.position = Vector3(hx, sy + (0.001), cz)
+			plate_mesh.position = Vector3(hx, sy + 0.001, cz)
 			add_child(plate_mesh)
-			# Star-tooth comb look (visual-only): a dark groove border under each
-			# plate + raised wood hooks at the lane's front lip, so it reads like the
-			# real recessed pockets - but NO physics bumps (they ate ball energy).
-			var border := MeshInstance3D.new()
-			var bbm := BoxMesh.new()
-			bbm.size = Vector3(SLOT_PITCH * (0.97), (0.002), SLOT_W * (0.70))
-			border.mesh = bbm
-			var bmat := StandardMaterial3D.new()
-			bmat.albedo_color = Color((0.16), (0.10), (0.06))
-			border.material_override = bmat
-			border.position = Vector3(hx, sy - (0.002), cz)
-			add_child(border)
+
+			# Dark wood comb separator on each socket's left edge (the last
+			# socket also gets a right edge, so neighbouring sockets never
+			# double-draw the same wall) - the classic pocket "hooks".
+			var sep_mat := StandardMaterial3D.new()
+			sep_mat.albedo_color = Color(0.16, 0.10, 0.06)
+			sep_mat.roughness = 0.7
+			for side in [-1.0, 1.0]:
+				if side < 0.0 or si == SLOTS_PER_POS - 1:
+					var sep := MeshInstance3D.new()
+					var sm := BoxMesh.new()
+					sm.size = Vector3(0.014, 0.016, SLOT_W * 0.72)
+					sep.mesh = sm
+					sep.material_override = sep_mat
+					sep.position = Vector3(hx + side * SLOT_PITCH * 0.5,
+						sy + 0.006, cz)
+					add_child(sep)
+
+			# Hooked teeth at the pocket's front lip (visual only).
 			var tooth_mat := StandardMaterial3D.new()
-			tooth_mat.albedo_color = Color((0.52), (0.34), (0.19))
-			tooth_mat.roughness =(0.5)
+			tooth_mat.albedo_color = Color(0.52, 0.34, 0.19)
+			tooth_mat.roughness = 0.5
 			for side in [-1.0, 1.0]:
 				var tooth := MeshInstance3D.new()
 				var tbm := BoxMesh.new()
-				tbm.size = Vector3((0.045), (0.012), (0.022))
+				tbm.size = Vector3(0.045, 0.012, 0.022)
 				tooth.mesh = tbm
 				tooth.material_override = tooth_mat
-				tooth.position = Vector3(hx + side * (0.055), sy + (0.007), cz - SLOT_W * (0.40))
-				tooth.rotation.y = -side * (0.85)
+				tooth.position = Vector3(hx + side * 0.055, sy + 0.007,
+					cz - SLOT_W * 0.40)
+				tooth.rotation.y = -side * 0.85
 				add_child(tooth)
+			slots[slots.size() - 1]["plate"] = plate_mat
 ## The player-end tray: returned balls land here and are re-racked.
 ## Floor top at y=-0.13 (the height test A's comment always assumed), walls
 ## on all open sides so a returned ball rests instead of escaping.
@@ -426,40 +440,122 @@ func flush_live() -> void:
 	var pending: Array = _tracked.duplicate()
 	for t in pending:
 		_resolve_ball(t)
-## Freeze a settled ball, assign its outcome (scored / returned / guttered)
-## and emit the matching signal. Runs every physics frame while live balls
-## exist - this is what makes capture actually reliable.
+## Resolve a settled ball with the OFFICIAL outcome precedence:
+##   1. Gutter            -> lost, turn passes.
+##   2. Tray (rolled back)-> Returned-Ball rule, back to the rack, free shot.
+##   3. Socket            -> official GROUPING rules via RulesEngine:
+##        claim empty socket  -> ball STAYS as a blocker, scored, turn passes
+##        adjacent own ball   -> that ball returns to its rack (displacement),
+##                               shooter KEEPS shooting
+##        walled by opponent  -> ball rests as a grouping wall, turn passes
+##   4. Open felt         -> Returned-Ball rule (never-scored balls roll back).
+## Every branch gives the ball a terminal state, so a turn can never hang.
 func _resolve_ball(t: Dictionary) -> void:
 	var b: Variant = t.get("ball")
 	if b == null or not is_instance_valid(b) or (b as SCBBall).freeze:
 		return
 	var bb: SCBBall = b as SCBBall
-	var is_scored := false
-	var scored_band := -1
 	var is_returned := _tray_zone != null and _tray_zone.overlaps_body(b)
 	var is_guttered := gutter != null and gutter.overlaps_body(b)
-	# Scoring outranks tray/gutter: a ball settling inside a pocket is a score.
+	if is_guttered:
+		_freeze_in_place(bb)
+		ball_guttered.emit(bb)
+		return
+	if is_returned:
+		reinsert_hand_ball(bb)
+		ball_returned.emit(bb)
+		return
+	var sd := _socket_overlapping(b)
+	if not sd.is_empty():
+		var occ := _occupancy(int(sd["band"]))
+		var dec := RulesEngine.resolve_socket(occ, int(sd["col"]), bb.color)
+		var action := String(dec["action"])
+		if action == "block":
+			# No empty socket and no same-colour neighbour: the ball rests
+			# against the occupied pocket as a grouping wall. Turn passes.
+			_freeze_in_place(bb)
+			ball_grouped.emit(bb)
+			return
+		if action == "displace":
+			var nb := _take_socket_ball(int(sd["band"]), int(dec["displace_col"]))
+			if nb != null:
+				reinsert_hand_ball(nb)
+				ball_displaced.emit(nb)
+		_claim_socket(sd, bb)
+		ball_scored.emit(bb, int(sd["band"]), bool(dec["keep_shooting"]))
+		return
+	reinsert_hand_ball(bb)
+	ball_returned.emit(bb)
+
+
+## ---- official socket ownership / grouping helpers (2026-09 rules pass) ----
+
+## "band:col" -> the SCBBall currently claiming that socket.
+var socket_balls := {}
+
+func _socket_overlapping(b: SCBBall) -> Dictionary:
 	for sd in slots:
 		if (sd["area"] as Area3D).overlaps_body(b):
-			sd["color"] = b.color
-			scored_band = int(sd["band"])
-			is_scored = true
-			is_returned = false
-			is_guttered = false
-			break
+			return sd
+	return {}
+
+func _socket_at(band: int, col: int) -> Dictionary:
+	for sd in slots:
+		if int(sd["band"]) == band and int(sd["col"]) == col:
+			return sd
+	return {}
+
+## Occupancy of one position's 7 sockets, in column order (creation order).
+func _occupancy(band: int) -> Array:
+	var occ: Array = []
+	for sd in slots:
+		if int(sd["band"]) == band:
+			occ.append(String(sd["color"]))
+	return occ
+
+func _socket_key(band: int, col: int) -> String:
+	return "%d:%d" % [band, col]
+
+## Removes the ball claiming a socket (returns it; caller re-racks it) and
+## frees the socket for a new claim.
+func _take_socket_ball(band: int, col: int) -> SCBBall:
+	var key := _socket_key(band, col)
+	var ball_v: Variant = socket_balls.get(key)
+	socket_balls.erase(key)
+	if ball_v != null and is_instance_valid(ball_v):
+		var sd := _socket_at(band, col)
+		if not sd.is_empty():
+			sd["color"] = ""
+			_recolor_plate(sd, "")
+		return ball_v as SCBBall
+	return null
+
+## A claimed socket: the ball freezes IN the pocket as a permanent blocker
+## and the socket glows in the owner's colour.
+func _claim_socket(sd: Dictionary, b: SCBBall) -> void:
+	sd["color"] = b.color
+	_recolor_plate(sd, b.color)
+	socket_balls[_socket_key(int(sd["band"]), int(sd["col"]))] = b
+	_freeze_in_place(b)
+
+func _freeze_in_place(b: SCBBall) -> void:
 	b.freeze = true
 	b.collision_layer = 0
 	b.collision_mask = 0
 	b.linear_velocity = Vector3.ZERO
 	b.angular_velocity = Vector3.ZERO
-	if is_scored:
-		ball_scored.emit(b, scored_band)
-	elif is_guttered:
-		ball_guttered.emit(b)
+
+func _recolor_plate(sd: Dictionary, color: String) -> void:
+	var mat_v: Variant = sd.get("plate")
+	if mat_v == null or not (mat_v is StandardMaterial3D):
+		return
+	var m := mat_v as StandardMaterial3D
+	if color == "":
+		m.emission = POS_GLOW[clampi(int(sd["band"]), 0, POS_GLOW.size() - 1)]
+		m.emission_energy_multiplier = 1.4
 	else:
-		# A returned ball (or any non-scoring rest) rolls back to the rack.
-		reinsert_hand_ball(b)
-		ball_returned.emit(b)
+		m.emission = CLAIM_GLOW[color]
+		m.emission_energy_multiplier = 2.2
 
 
 ## Track a freshly-launched ball so the settle-detector resolves it.

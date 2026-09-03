@@ -58,6 +58,8 @@ func _ready() -> void:
 	world.ball_scored.connect(_on_ball_scored)
 	world.ball_guttered.connect(_on_ball_guttered)
 	world.ball_returned.connect(_on_ball_returned)
+	world.ball_displaced.connect(_on_ball_displaced)
+	world.ball_grouped.connect(_on_ball_grouped)
 	_build_env()
 	_build_lights()
 	_build_camera()
@@ -67,7 +69,7 @@ func _ready() -> void:
 		world.spawn_hand_ball("red")
 		world.spawn_hand_ball("black")
 	_give_active_ball()
-	print("SCB_MAIN_VERSION=sleepfix-20260904a SLING_K=%s serve=%s" % [
+	print("SCB_MAIN_VERSION=official-v4-20260904 SLING_K=%s serve=%s" % [
 		SLING_K, (active_ball.position if active_ball != null else Vector3.INF)])
 
 
@@ -207,19 +209,36 @@ func _add_landing_marker(pos: Vector3) -> void:
 
 # ------------------------------------------------------------ shot outcome --
 
-func _on_ball_scored(ball: SCBBall, band: int) -> void:
+func _on_ball_scored(ball: SCBBall, band: int, keep_shooting: bool) -> void:
 	var pts: int = [1, 2, 5][clampi(band, 0, 2)]
-	print("SCB SCORED color=%s band=%d pts=%d" % [ball.color, band, pts])
+	print("SCB SCORED color=%s band=%d pts=%d keep=%s" % [
+		ball.color, band, pts, keep_shooting])
 	scores[ball.color] = int(scores[ball.color]) + pts
 	_update_hud()
 	_score_juice(ball.position, pts)
 	pending_resolve = false
-	if ball.color == active_color:
-		_msg("+%d  keep shooting" % pts)
+	if keep_shooting and ball.color == active_color:
+		_msg("+%d  GROUP! keep shooting" % pts)
 		_give_active_ball()
 	else:
-		_msg("%s scores +%d" % [_color_name(ball.color), pts])
+		_msg("+%d  %s claims a pocket" % [pts, _color_name(ball.color)])
 		_pass_turn()
+
+
+## Official grouping: a grouped ball was knocked back to its owner's rack.
+func _on_ball_displaced(ball: SCBBall) -> void:
+	print("SCB DISPLACED color=%s" % ball.color)
+	hand_counts[ball.color] = int(hand_counts[ball.color]) + 1
+	_update_hud()
+
+
+## Official grouping: the shot ball could not claim a pocket and now walls
+## one instead - it stays on the table as an obstacle, turn passes.
+func _on_ball_grouped(ball: SCBBall) -> void:
+	print("SCB GROUPED color=%s" % ball.color)
+	_msg("%s ball walls a pocket - turn passes" % _color_name(ball.color))
+	pending_resolve = false
+	_pass_turn()
 
 
 func _on_ball_guttered(_ball: SCBBall) -> void:
