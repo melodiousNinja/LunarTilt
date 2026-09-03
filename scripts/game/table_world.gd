@@ -466,6 +466,7 @@ func take_hand_ball(color: String) -> SCBBall:
 	b.freeze = false
 	b.collision_layer = 2
 	b.collision_mask = 3
+	b.sleeping = false  # serve awake - a sleeping ball ignores launch impulses
 	b.linear_velocity = Vector3.ZERO
 	b.angular_velocity = Vector3.ZERO
 	b.position = Vector3(0.0, ball_rest_y(0.0, LAUNCH_Z), LAUNCH_Z)

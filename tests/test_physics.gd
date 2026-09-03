@@ -67,6 +67,61 @@ func _run() -> void:
 	for i in 5:
 		await physics_frame
 
+	# --- C. SLEEPING-BALL LAUNCH (live-device regression, 2026-09 seq2) ---
+	# A served ball rests on the slope and Jolt puts it to sleep within ~1 s.
+	# Assigning linear_velocity on a sleeping body is silently ignored, so
+	# every pull-and-release did literally nothing on the phone. main.gd now
+	# wakes the ball and applies the shot as an impulse.
+	var bug_ball := SCBBall.create("red")
+	root.add_child(bug_ball)
+	bug_ball.position = Vector3(0.0, world.ball_rest_y(0.0, world.LAUNCH_Z), world.LAUNCH_Z)
+	bug_ball.linear_velocity = Vector3.ZERO
+	for i in 10:
+		await physics_frame
+	bug_ball.sleeping = true
+	for i in 5:
+		await physics_frame
+	_expect(bug_ball.sleeping, "served ball can be in the slept state (precondition)")
+	var pre_bug := bug_ball.position
+	bug_ball.linear_velocity = Vector3(0.0, 0.0, 1.5)  # the OLD broken launch path
+	for i in 30:
+		await physics_frame
+	var drift_bug: float = (bug_ball.position - pre_bug).length()
+	print("SLEEP_TEST velocity-only drift=%.4f still_sleeping=%s" % [drift_bug, bug_ball.sleeping])
+	# ENGINE TRUTH (4.7.2 + Jolt, measured 2026-09-04): velocity assignment DOES
+	# wake and move a slept body in headless physics (drift 0.44 m). We assert
+	# that so any future engine regression here is caught; the device-side
+	# dead-launch therefore needs on-device logcat evidence, not this theory.
+	_expect(drift_bug > 0.3,
+		"velocity assignment launches even a sleeping ball on this engine (drift %.4f)" % drift_bug)
+	bug_ball.queue_free()
+	for i in 5:
+		await physics_frame
+
+	var fix_ball := SCBBall.create("black")
+	root.add_child(fix_ball)
+	fix_ball.position = Vector3(0.0, world.ball_rest_y(0.0, world.LAUNCH_Z), world.LAUNCH_Z)
+	fix_ball.linear_velocity = Vector3.ZERO
+	for i in 10:
+		await physics_frame
+	fix_ball.sleeping = true
+	for i in 5:
+		await physics_frame
+	var pre_fix := fix_ball.position
+	# The exact code main._release_shot now runs:
+	fix_ball.sleeping = false
+	fix_ball.apply_central_impulse(Vector3(0.0, 0.0, 1.5) * fix_ball.mass)
+	var peak_z := pre_fix.z
+	for i in 120:
+		await physics_frame
+		peak_z = maxf(peak_z, fix_ball.position.z)
+	print("SLEEP_TEST wake+impulse peak_z=%.3f (from %.3f)" % [peak_z, pre_fix.z])
+	_expect(peak_z > pre_fix.z + 0.3,
+		"wake + impulse launches a sleeping ball up-slope (peak z %.2f)" % peak_z)
+	fix_ball.queue_free()
+	for i in 5:
+		await physics_frame
+
 	print("PHYSICS_TEST total=%d failures=%d" % [_total, _failures])
 	if _failures == 0:
 		print("ALL TESTS PASSED")

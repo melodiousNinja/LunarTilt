@@ -67,6 +67,8 @@ func _ready() -> void:
 		world.spawn_hand_ball("red")
 		world.spawn_hand_ball("black")
 	_give_active_ball()
+	print("SCB_MAIN_VERSION=sleepfix-20260904a SLING_K=%s serve=%s" % [
+		SLING_K, (active_ball.position if active_ball != null else Vector3.INF)])
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -92,6 +94,8 @@ func _start_aim(pos: Vector2) -> void:
 	aiming = true
 	aim_start = pos
 	_update_power_meter(0.0)
+	print("SCB aim_start=%s ball=%s sleeping=%s" % [pos, active_ball != null,
+		active_ball != null and active_ball.sleeping])
 
 
 func _release_shot(screen_pos: Vector2) -> void:
@@ -101,11 +105,13 @@ func _release_shot(screen_pos: Vector2) -> void:
 	guide_node.visible = false
 	power_bar.visible = false
 	if active_ball == null:
+		print("SCB release: NO ACTIVE BALL - abort")
 		return
 	var pull := aim_start - screen_pos
 	var len := pull.length()
 	if len < 14.0:
 		_msg("Too soft - pull the ball further back")
+		print("SCB release TOO SOFT len=%.1f" % len)
 		return
 	active_ball.is_active = false
 	_resolve_elapsed = 0.0
@@ -116,7 +122,16 @@ func _release_shot(screen_pos: Vector2) -> void:
 	var lateral := clampf(pull.x / maxf(len, 0.001), -0.85, 0.85)
 	var angle := asin(lateral)
 	var dir := Vector3(sin(angle), 0.0, cos(angle)).normalized()
-	active_ball.linear_velocity = dir * power
+	# CRITICAL FIX (live-proven on device): a served ball comes to rest on the
+	# slope and Jolt puts it to SLEEP within ~1 s. Assigning linear_velocity on
+	# a sleeping RigidBody3D is silently ignored - shots did literally nothing.
+	# Wake the body first, then apply the shot as an impulse (impulse wakes
+	# bodies; direct velocity assignment does not). impulse = m * dv, so with
+	# the ball at rest the result is exactly linear_velocity = dir * power.
+	print("SCB release len=%.0f power=%.2f angle=%.2f was_sleeping=%s" % [len, power, angle, active_ball.sleeping])
+	active_ball.sleeping = false
+	active_ball.apply_central_impulse(dir * power * active_ball.mass)
+	print("SCB LAUNCH v=%s pos=%s" % [active_ball.linear_velocity, active_ball.position])
 	world.track_live(active_ball)
 	active_ball = null
 	pending_resolve = true
@@ -194,6 +209,7 @@ func _add_landing_marker(pos: Vector3) -> void:
 
 func _on_ball_scored(ball: SCBBall, band: int) -> void:
 	var pts: int = [1, 2, 5][clampi(band, 0, 2)]
+	print("SCB SCORED color=%s band=%d pts=%d" % [ball.color, band, pts])
 	scores[ball.color] = int(scores[ball.color]) + pts
 	_update_hud()
 	_score_juice(ball.position, pts)
@@ -207,6 +223,7 @@ func _on_ball_scored(ball: SCBBall, band: int) -> void:
 
 
 func _on_ball_guttered(_ball: SCBBall) -> void:
+	print("SCB GUTTERED")
 	_msg("%s lost the ball down the gutter" % _color_name(active_color))
 	_gutter_juice()
 	pending_resolve = false
@@ -214,6 +231,7 @@ func _on_ball_guttered(_ball: SCBBall) -> void:
 
 
 func _on_ball_returned(ball: SCBBall) -> void:
+	print("SCB RETURNED color=%s" % ball.color)
 	## Real-sport rule: the ball rolls back into the tray and is handed back
 	## to the shooter, so the turn is NOT spent.
 	world.reinsert_hand_ball(ball)
@@ -309,6 +327,16 @@ func _process(delta: float) -> void:
 			cam.fov = _camera_base_fov + _fov_punch
 	if pending_resolve:
 		_resolve_elapsed += delta
+		# Flight telemetry: every ~0.5 s dump the live ball state to logcat so
+		# on-device shot behavior is directly observable.
+		if int(_resolve_elapsed * 2.0) != int((_resolve_elapsed - delta) * 2.0):
+			var b: SCBBall = null
+			if not world.live_balls.is_empty():
+				b = world.live_balls.back() as SCBBall
+			if b != null and is_instance_valid(b):
+				print("SCB flight t=%.1f pos=%s v=%.2f sleeping=%s" % [_resolve_elapsed,
+					(b as SCBBall).position, (b as SCBBall).linear_velocity.length(),
+					(b as SCBBall).sleeping])
 		if _resolve_elapsed >= _RESOLVE_DELAY:
 			_resolve_elapsed = 0.0
 			pending_resolve = false
