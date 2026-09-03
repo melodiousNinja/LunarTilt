@@ -1,6 +1,7 @@
+param([string]$Path = "artifacts\\frame_capture.png")
 Add-Type -AssemblyName System.Drawing
 $ErrorActionPreference = 'Stop'
-$bmp = [System.Drawing.Bitmap]::FromFile((Resolve-Path "artifacts\frame_capture.png"))
+$bmp = [System.Drawing.Bitmap]::FromFile((Resolve-Path $Path))
 $w = $bmp.Width
 $h = $bmp.Height
 $bins = @{}

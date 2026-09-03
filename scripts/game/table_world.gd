@@ -35,8 +35,8 @@ const RAIL_TOP_Y := -0.03 + RAIL_H_TOTAL * 0.5
 const SLOTS_PER_POS := 7
 const POS_Z := [0.62, 1.10, 1.58]     # pocket band centers (closest..furthest)
 const SLOT_W := 0.16                  # pocket band depth (Z)
-const SLOT_PITCH := 0.42              # pocket X pitch - each slot owns 0.42 m
-const POCKET_X_HALF := 0.60           # trough spans the playable width
+const SLOT_PITCH :=(0.15)              # pocket X pitch (7 lanes evenly across +-0.45)
+const POCKET_X_HALF :=(0.60)           # playable half-width the bands span
 const PLAY_LINE_Z := 0.35
 const LAUNCH_Z := 0.22                # ball spawn behind the play line
 
@@ -104,6 +104,12 @@ static func rack_spot(color: String, index: int) -> Vector3:
 	var x := rack_x(color)
 	var z := RACK_Z_START + index * RACK_PITCH
 	return Vector3(x, _rack_floor_y(x) + SCBBall.RADIUS_M, z)
+
+
+## X center of slot lane `si` (shared across all three bands). Regression guard:
+## v3 briefly spaced lanes 0.42 m apart - half the plates hung off the board.
+static func slot_center_x(si: int) -> float:
+	return -0.45 + si * SLOT_PITCH
 
 
 ## 8 corners of the visual frame we care about (racks + tray + table + gutter).
@@ -266,7 +272,7 @@ func _build_pockets(wood_mat: StandardMaterial3D) -> void:
 		# lane reads on a phone: gold 1, silver 2, crimson 3 - colour-coded.
 		var glow_colors := [Color(0.93, 0.75, 0.22), Color(0.82, 0.85, 0.92), Color(0.78, 0.25, 0.22)]
 		for si in range(SLOTS_PER_POS):
-			var hx := -0.45 + si * SLOT_PITCH
+			var hx := slot_center_x(si)
 			var area := Area3D.new()
 			var cs := CollisionShape3D.new()
 			var sb := BoxShape3D.new()
@@ -295,6 +301,30 @@ func _build_pockets(wood_mat: StandardMaterial3D) -> void:
 			plate_mesh.material_override = plate_mat
 			plate_mesh.position = Vector3(hx, sy + (0.001), cz)
 			add_child(plate_mesh)
+			# Star-tooth comb look (visual-only): a dark groove border under each
+			# plate + raised wood hooks at the lane's front lip, so it reads like the
+			# real recessed pockets - but NO physics bumps (they ate ball energy).
+			var border := MeshInstance3D.new()
+			var bbm := BoxMesh.new()
+			bbm.size = Vector3(SLOT_PITCH * (0.97), (0.002), SLOT_W * (0.70))
+			border.mesh = bbm
+			var bmat := StandardMaterial3D.new()
+			bmat.albedo_color = Color((0.16), (0.10), (0.06))
+			border.material_override = bmat
+			border.position = Vector3(hx, sy - (0.002), cz)
+			add_child(border)
+			var tooth_mat := StandardMaterial3D.new()
+			tooth_mat.albedo_color = Color((0.52), (0.34), (0.19))
+			tooth_mat.roughness =(0.5)
+			for side in [-1.0, 1.0]:
+				var tooth := MeshInstance3D.new()
+				var tbm := BoxMesh.new()
+				tbm.size = Vector3((0.045), (0.012), (0.022))
+				tooth.mesh = tbm
+				tooth.material_override = tooth_mat
+				tooth.position = Vector3(hx + side * (0.055), sy + (0.007), cz - SLOT_W * (0.40))
+				tooth.rotation.y = -side * (0.85)
+				add_child(tooth)
 func _physics_process(_delta: float) -> void:
 	if _tracked.size() == 0:
 		return

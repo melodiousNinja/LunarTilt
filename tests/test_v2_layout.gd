@@ -56,6 +56,22 @@ func _run() -> void:
 		_expect(absf((b - a).length() - TableWorldScript.RACK_PITCH) < 0.0001,
 			"consecutive rack spacing at index %d" % idx)
 
+# --- D. Slot lanes stay inside the table (v3 regression: plates once hung
+	# off a 1.2 m board because the X pitch was 0.42 m) ---
+	var w_half: float = TableWorldScript.TABLE_WID * (0.5)
+	_expect(TableWorldScript.slot_center_x(0) >= -w_half,
+		"leftmost slot inside the table (x=%.3f)" % TableWorldScript.slot_center_x(0))
+	_expect(TableWorldScript.slot_center_x(6) <= w_half,
+		"rightmost slot inside the table (x=%.3f)" % TableWorldScript.slot_center_x(6))
+	var span: float = TableWorldScript.slot_center_x(6) - TableWorldScript.slot_center_x(0)
+	_expect(absf(span - 6.0 * TableWorldScript.SLOT_PITCH) < (0.001),
+		"lane X spacing even (span=%.3f)" % span)
+	var lane_half: float = TableWorldScript.SLOT_PITCH * (0.5)
+	_expect(absf(TableWorldScript.slot_center_x(0)) >= lane_half,
+		"edge lane fully on the felt (center minus half-width)")
+	# Visual-only teeth must sit inside the playable width too.
+	_expect(TableWorldScript.slot_center_x(6) + (0.06) <= w_half,
+		"outer tooth hook stays on the table (x=%.3f)" % (TableWorldScript.slot_center_x(6) + (0.06)))
 	print("V2_LAYOUT_TEST total=%d failures=%d" % [_total, _failures])
 	if _failures == 0:
 		print("ALL TESTS PASSED")
