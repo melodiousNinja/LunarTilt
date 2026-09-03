@@ -18,6 +18,7 @@ var players := []          # [{color, hand, score}]
 var turn := 0              # index into players
 var board := []            # [ [7 slots] x3 ]
 var finished := false
+var winner := ""           # "red" / "black" / "draw" once finished
 
 
 static func make(mode: Mode) -> MatchController:
@@ -33,6 +34,7 @@ static func make(mode: Mode) -> MatchController:
 		for _i in range(7):
 			m.board[pi].append("")
 	m.finished = false
+	m.winner = ""
 	return m
 
 
@@ -44,43 +46,47 @@ func other_player() -> Dictionary:
 	return players[(turn + 1) % players.size()]
 
 
-## Consume a shot's outcome. out = { hit_slot: int (-1 none), gutted: bool }
-## Returns the new state dictionary. Throws nothing - callers watch signals.
+## Consume a shot's outcome.
+## out = { hit_slot: int (-1 none), gutted: bool,
+##         scored_for: String (defaults to active color; for knockout-in) }
 func resolve_shot(out: Dictionary) -> Dictionary:
 	if finished:
 		return _snapshot()
-
 	var p: Dictionary = players[turn]
-	var is_slot := int(out.get("hit_slot", -1)) >= 0
-	var gutted := bool(out.get("gutted", false))
+	var hit := int(out.get("hit_slot", -1))
+	var is_slot := hit >= 0
+	var scored_for: String = out.get("scored_for", p["color"])
+	var gutter := bool(out.get("gutted", false))
 
 	if is_slot:
-		var pi := clampi(int(out["hit_slot"]), 0, 2)
-		_claim_slot(pi, p.color)
-		p["score"] += SLOT_POINTS[pi]
+		var pi := clampi(hit, 0, 2)
+		_claim_slot(pi, scored_for)
+		for player in players:
+			if player["color"] == scored_for:
+				player["score"] = int(player["score"]) + SLOT_POINTS[pi]
+				break
+		# The shot ball is spent either way - it stays in the slot.
 		p["hand"] = int(p["hand"]) - 1
-		# Keep the turn: score -> shoot again.
+		# Keep the turn when the SHOOTER scored; a knockout-in passes it.
+		if scored_for != p["color"]:
+			turn = (turn + 1) % players.size()
 	else:
 		# Miss / returned ball / gutter: ball is spent, turn passes.
-		if gutted:
-			p["hand"] = int(p["hand"]) - 1
+		p["hand"] = int(p["hand"]) - 1
+		turn = (turn + 1) % players.size()
 
-	# A player who runs out of balls ends the round.
 	if int(p["hand"]) <= 0:
 		finished = true
 		_calc_final()
+		_compute_winner()
 		match_ended.emit(_snapshot())
 		return _snapshot()
-
-	if not is_slot:
-		turn = (turn + 1) % players.size()
 
 	state_changed.emit(_snapshot())
 	return _snapshot()
 
 
-## Claim the first empty slot of position `pi` for `color` (board bookkeeping
-## used by the final official aggregate).
+## Claim the first empty slot of position `pi` for `color`.
 func _claim_slot(pi: int, color: String) -> void:
 	for i in range(board[pi].size()):
 		if board[pi][i] == "":
@@ -92,7 +98,18 @@ func _claim_slot(pi: int, color: String) -> void:
 func _calc_final() -> void:
 	for p in players:
 		var res := RulesEngine.score_board(board)
-		p["score"] = int(res["per_color"][p.color])
+		p["score"] = int(res["per_color"][p["color"]])
+
+
+func _compute_winner() -> void:
+	var red := int(players[0]["score"])
+	var black := int(players[1]["score"])
+	if red > black:
+		winner = "red"
+	elif black > red:
+		winner = "black"
+	else:
+		winner = "draw"
 
 
 func _snapshot() -> Dictionary:
@@ -101,5 +118,6 @@ func _snapshot() -> Dictionary:
 		"players": players.duplicate(true),
 		"board": board.duplicate(true),
 		"finished": finished,
+		"winner": winner,
 		"mode": mode,
 	}

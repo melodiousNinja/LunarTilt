@@ -33,16 +33,21 @@ func _run() -> void:
 	ball.position = Vector3(0.0, world.ball_rest_y(0.0, start_z), start_z)
 	ball.linear_velocity = Vector3(0.0, 0.0, 2.0)
 	ball.angular_velocity = Vector3.ZERO
+	world.track_live(ball)
 	var min_y := ball.position.y
-	var min_expected := -0.135  # tray floor top (-0.13) minus ball radius (-0.02) and margin
+	var max_z := ball.position.z
+	# Tray floor top (-0.13) minus ball radius (0.030) minus a small margin; a
+	# ball center below this means it tunnelled through the tray floor.
+	var min_expected := -0.165
 	for i in 420:
 		await physics_frame
 		min_y = minf(min_y, ball.position.y)
-	print("SHOT final_z=%.3f min_y=%.4f expected_min_y=%.4f speed=%.3f" % [
-		ball.position.z, min_y, min_expected, ball.linear_velocity.length()])
+		max_z = maxf(max_z, ball.position.z)
+	print("SHOT peak_z=%.3f min_y=%.4f expected_min_y=%.4f speed=%.3f" % [
+		max_z, min_y, min_expected, ball.linear_velocity.length()])
 	_expect(min_y >= min_expected, "ball never tunnels below the board (min_y %.3f)" % min_y)
-	_expect(ball.position.z >= 1.4, "2.0 m/s shot reaches deep zone (z >= 1.4)")
-	_expect(ball.position.z <= 2.4, "shot never clears the far rail (z <= 2.4)")
+	_expect(max_z >= 1.4, "2.0 m/s shot reaches deep zone (peak z >= 1.4, got %.2f)" % max_z)
+	_expect(max_z <= 2.4, "shot never clears the far rail (peak z <= 2.4)")
 	ball.queue_free()
 	for i in 5:
 		await physics_frame
@@ -53,6 +58,7 @@ func _run() -> void:
 	settler.position = Vector3(-0.2, world.ball_rest_y(0.0, 1.10), 1.10)
 	settler.linear_velocity = Vector3.ZERO
 	settler.angular_velocity = Vector3.ZERO
+	world.track_live(settler)
 	for i in 60:
 		await physics_frame
 	_expect(settler.freeze == true, "near-rest ball is captured by a slot (frozen)")

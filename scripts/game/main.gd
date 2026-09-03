@@ -1,5 +1,13 @@
 extends Node3D
-## Lunar Tilt - main gameplay scene.
+## Lunar Tilt - main gameplay scene (V3).
+##
+## Drag-back SLINGSHOT: grab the ball and pull DOWN-screen (toward the tray)
+## to charge; release to launch it up the 4.99-degree slope. While aiming you
+## see a dotted ShotMath trajectory + a landing marker, plus a power meter.
+## Scoring uses the physical world's settle-detection (a ball that settles in
+## a pocket is caught; a fast ball skims past). The sport's Returned-Ball rule
+## is honoured: a ball that rolls back down lands in the tray and returns to
+## the shooter's rack so the turn continues.
 
 const WorldScript := preload("res://scripts/game/table_world.gd")
 const CameraRigScript := preload("res://scripts/game/camera_rig.gd")
@@ -7,18 +15,20 @@ const CameraRigScript := preload("res://scripts/game/camera_rig.gd")
 var world: TableWorld
 var cam: Camera3D
 
-# Match state
+# Match state (scene-side; MatchController drives the AI / rules tests)
 var active_color := "red"
 var hand_counts := {"red": 12, "black": 12}
 var scores := {"red": 0, "black": 0}
 var active_ball: SCBBall = null
 var pending_resolve := false
+var _resolve_elapsed := 0.0
+const _RESOLVE_DELAY :=(9.0 * 0.5)
 
-# Input
-var guide_layer: CanvasLayer
-var guide_line: Node3D
-var dragging := false
-var drag_start := Vector2.ZERO
+# Slingshot input
+var aiming := false
+var aim_start := Vector2.ZERO
+var guide_node: Node3D
+var power_bar: ProgressBar
 
 # HUD
 var label_red: Label
@@ -27,22 +37,25 @@ var label_turn: Label
 var label_msg: Label
 var hud_root: Control
 
-# Camera framing (v2 aspect-aware rig)
+# Camera + broadcast juice
 const CAM_FOV := 62.0
 const LOOK_TARGET := Vector3(0.0, 0.02, 0.98)
 var _camera_base_fov := CAM_FOV
-
-# Broadcast juice state
 var _vignette: ColorRect
 var _msg_tween: Tween = null
 var _fov_punch := 0.0
+
+## Slingshot conversion: screen px of pull -> m/s of launch velocity.
+const SLING_K := 0.0035
+const MIN_POWER := 0.8
+const GUTTER_POWER_LIMIT := 3.3
 
 
 func _ready() -> void:
 	world = WorldScript.new()
 	world.name = "TableWorld"
 	add_child(world)
-	world.ball_captured.connect(_on_ball_captured)
+	world.ball_scored.connect(_on_ball_scored)
 	world.ball_guttered.connect(_on_ball_guttered)
 	world.ball_returned.connect(_on_ball_returned)
 	_build_env()
@@ -57,40 +70,220 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed and not dragging and active_ball != null:
-			dragging = true
-			drag_start = event.position
-		elif dragging:
-			dragging = false
-			guide_line.visible = false
-			_launch(event.position)
-	elif event is InputEventMouseMotion and dragging:
+	var on_mobile := OS.has_feature("mobile")
+	if on_mobile and event is InputEventScreenTouch:
+		if event.pressed and not aiming and active_ball != null:
+			_start_aim(event.position)
+		elif aiming and not event.pressed:
+			_release_shot(event.position)
+	elif on_mobile and event is InputEventScreenDrag:
+		if aiming:
+			_update_guide(event.position)
+	elif not on_mobile and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed and not aiming and active_ball != null:
+			_start_aim(event.position)
+		elif aiming:
+			_release_shot(event.position)
+	elif not on_mobile and event is InputEventMouseMotion and aiming:
 		_update_guide(event.position)
 
 
-func _launch(screen_pos: Vector2) -> void:
+func _start_aim(pos: Vector2) -> void:
+	aiming = true
+	aim_start = pos
+	_update_power_meter(0.0)
+
+
+func _release_shot(screen_pos: Vector2) -> void:
+	if not aiming:
+		return
+	aiming = false
+	guide_node.visible = false
+	power_bar.visible = false
 	if active_ball == null:
 		return
-	var d := screen_pos - drag_start
-	if d.length() < 12.0:
-		_msg("Too soft - keep the ball")
+	var pull := aim_start - screen_pos
+	var len := pull.length()
+	if len < 14.0:
+		_msg("Too soft - pull the ball further back")
 		return
-	# Flick: dragging down-screen (toward player) launches forward (+Z).
-	var vel := Vector3(d.x * 0.0042, 0.0, -d.y * 0.0042)
-	vel = vel.normalized() * clampf(d.length() * Settings.power_scale, 0.6, 3.4)
-	active_ball.linear_velocity = vel
+	active_ball.is_active = false
+	_resolve_elapsed = 0.0
+	var power := clampf(len * SLING_K, MIN_POWER, GUTTER_POWER_LIMIT)
+	# Pulling down-screen (-Y) launches up-slope (+Z); lateral pull throws wide.
+	var dir := Vector3(-pull.x, 0.0, -pull.y).normalized()
+	active_ball.linear_velocity = dir * power
+	world.track_live(active_ball)
 	active_ball = null
 	pending_resolve = true
+	_fov_punch = 0.8
 
 
-var _resolve_timer := 0.0
-const _RESOLVE_DELAY := 4.5
+func _update_guide(screen_pos: Vector2) -> void:
+	if not aiming or active_ball == null:
+		return
+	var pull := aim_start - screen_pos
+	var len := pull.length()
+	if len < 8.0:
+		return
+	var power := clampf(len * SLING_K, MIN_POWER, GUTTER_POWER_LIMIT)
+	_update_power_meter(power)
+	# Screen-Y is down-positive, so world +Z (up-screen) == -screen Y.
+	var angle := atan2(-pull.x, -pull.y)
+	_draw_trajectory(active_ball.position, angle, power)
 
 
-# Capture mode: `-- --capture` (non-headless) renders {n} frames, saves a
-# screenshot to res://artifacts/frame_capture.png, then quits. Used as a
-# visual regression gate since headless runs never render a frame.
+func _draw_trajectory(start: Vector3, angle: float, power: float) -> void:
+	for child in guide_node.get_children():
+		child.queue_free()
+	var z := clampf(ShotMath.landing_z(power, angle), ShotMath.PLAY_LINE_Z, ShotMath.FAR_GUTTER_Z)
+	var x := ShotMath.lateral_drift(power, angle)
+	x = clampf(x, -0.42, 0.42)
+	var land := Vector3(x, world.surface_y_at(x, z) + 0.004, z)
+	const STEPS := 14
+	var prev: Vector3 = start
+	for i in range(1, STEPS + 1):
+		var t := float(i) / float(STEPS)
+		var p := start.lerp(land, t)
+		p.y += 0.028 * sin(PI * t)
+		_add_guide_segment(prev, p)
+		prev = p
+	_add_landing_marker(land)
+
+
+func _add_guide_segment(a: Vector3, b: Vector3) -> void:
+	var im := ImmediateMesh.new()
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	im.surface_add_vertex(a)
+	im.surface_add_vertex(b)
+	im.surface_end()
+	var mi := MeshInstance3D.new()
+	mi.mesh = im
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 0.92, 0.55, 0.8)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mi.material_override = mat
+	guide_node.add_child(mi)
+
+
+func _add_landing_marker(pos: Vector3) -> void:
+	var mi := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.042
+	sm.height = 0.022
+	sm.radial_segments = 20
+	sm.rings = 8
+	mi.mesh = sm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 0.45, 0.15, 0.92)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.5, 0.2)
+	mat.emission_energy_multiplier = 2.2
+	mi.material_override = mat
+	mi.position = pos
+	guide_node.add_child(mi)
+
+
+# ------------------------------------------------------------ shot outcome --
+
+func _on_ball_scored(ball: SCBBall, band: int) -> void:
+	var pts: int = [1, 2, 5][clampi(band, 0, 2)]
+	scores[ball.color] = int(scores[ball.color]) + pts
+	_update_hud()
+	_score_juice(ball.position, pts)
+	pending_resolve = false
+	if ball.color == active_color:
+		_msg("+%d  keep shooting" % pts)
+		_give_active_ball()
+	else:
+		_msg("%s scores +%d" % [_color_name(ball.color), pts])
+		_pass_turn()
+
+
+func _on_ball_guttered(_ball: SCBBall) -> void:
+	_msg("%s lost the ball down the gutter" % _color_name(active_color))
+	_gutter_juice()
+	pending_resolve = false
+	_pass_turn()
+
+
+func _on_ball_returned(ball: SCBBall) -> void:
+	## Real-sport rule: the ball rolls back into the tray and is handed back
+	## to the shooter, so the turn is NOT spent.
+	world.reinsert_hand_ball(ball)
+	hand_counts[ball.color] = int(hand_counts[ball.color]) + 1
+	pending_resolve = false
+	_msg("%s ball back in hand" % _color_name(ball.color))
+	_update_hud()
+	if ball.color == active_color:
+		_give_active_ball()
+
+
+func _pass_turn() -> void:
+	active_color = "black" if active_color == "red" else "red"
+	_finish_shot()
+	_give_active_ball()
+
+
+func _finish_shot() -> void:
+	if active_ball != null:
+		active_ball.is_active = false
+		active_ball.freeze = true
+		active_ball = null
+	pending_resolve = false
+	_resolve_elapsed = 0.0
+	_update_hud()
+
+
+func _give_active_ball() -> void:
+	if hand_counts[active_color] <= 0:
+		active_color = "black" if active_color == "red" else "red"
+	if hand_counts[active_color] <= 0:
+		_match_over()
+		return
+	hand_counts[active_color] -= 1
+	active_ball = world.take_hand_ball(active_color)
+	if active_ball == null:
+		_msg("No ball in rack")
+		return
+	active_ball.is_active = true
+	_update_hud()
+
+
+## Board as the RulesEngine expects it: [[pos0 slots], [pos1], [pos2]].
+func _current_board() -> Array:
+	var board := [[], [], []]
+	for sd in world.slots:
+		board[int(sd["band"])].append(sd["color"])
+	return board
+
+
+func _match_over() -> void:
+	pending_resolve = false
+	var res := RulesEngine.score_board(_current_board())
+	scores["red"] = int(res["per_color"]["red"])
+	scores["black"] = int(res["per_color"]["black"])
+	_update_hud()
+	var winner := "Draw"
+	if scores["red"] > scores["black"]:
+		winner = "Red"
+	elif scores["black"] > scores["red"]:
+		winner = "Black"
+	_msg("GAME OVER  |  %s wins!" % winner)
+	_flash(Color(1.0, 0.9, 0.5), 0.3)
+	_fov_punch = 2.5
+
+
+func _color_name(c: String) -> String:
+	return "Red" if c == "red" else "Black"
+
+
+# --------------------------------------------------------------- capture --
+
+## Capture mode: `-- --capture` (non-headless) renders {n} frames, saves a
+## screenshot to res://artifacts/frame_capture.png, then quits. Visual
+## regression gate since headless runs never render a frame.
 var capture_mode := "--capture" in OS.get_cmdline_user_args()
 var _capture_frames := 0
 const _CAPTURE_AFTER := 210
@@ -109,106 +302,17 @@ func _process(delta: float) -> void:
 		_fov_punch = maxf(0.0, _fov_punch - delta * 6.0)
 		if cam != null:
 			cam.fov = _camera_base_fov + _fov_punch
-	if pending_resolve and active_ball == null:
-		_resolve_timer += delta
-		if _resolve_timer >= _RESOLVE_DELAY:
-			_resolve_timer = 0.0
+	if pending_resolve:
+		_resolve_elapsed += delta
+		if _resolve_elapsed >= _RESOLVE_DELAY:
+			_resolve_elapsed = 0.0
 			pending_resolve = false
-			_resolve_shot(NOT_SCORED)
+			world.flush_live()
+			_msg("Shot resolved - turn settles")
 
 
-## Shot outcome kinds for _resolve_shot.
-const NOT_SCORED := 0
-const SCORED_SWITCH := 1
+# ---------------------------------------------------------------- visuals --
 
-
-func _resolve_shot(kind: int, scored_for := "") -> void:
-	if kind == NOT_SCORED:
-		_msg("Miss - turn passes")
-		_pass_turn()
-	else:
-		_msg("%s knocks in opponent ball - they score!" % _color_name(active_color))
-		scores[scored_for] += 2
-		_update_hud()
-		_pass_turn()
-
-
-func _pass_turn() -> void:
-	active_color = "black" if active_color == "red" else "red"
-	_finish_shot()
-	_give_active_ball()
-
-
-func _finish_shot() -> void:
-	if active_ball != null:
-		active_ball.freeze = true
-		active_ball = null
-	pending_resolve = false
-	_resolve_timer = 0.0
-	_update_hud()
-
-
-func _give_active_ball() -> void:
-	if hand_counts[active_color] <= 0:
-		_msg("%s has no balls left" % _color_name(active_color))
-		active_color = "black" if active_color == "red" else "red"
-	if hand_counts[active_color] <= 0:
-		_msg("Match over - highest score wins")
-		return
-	hand_counts[active_color] -= 1
-	active_ball = world.take_hand_ball(active_color)
-	if active_ball == null:
-		_msg("No ball in tray")
-		return
-	_update_hud()
-
-
-func _on_ball_captured(ball: SCBBall, slot_index: int) -> void:
-	if ball.color == active_color:
-		pending_resolve = false
-		_resolve_timer = 0.0
-		scores[active_color] += _score_slot(slot_index)
-		_update_hud()
-		_msg("+%d - keep shooting" % _score_slot(slot_index))
-		_give_active_ball()
-	else:
-		_resolve_shot(SCORED_SWITCH, ball.color)
-
-
-func _on_ball_guttered(_ball: SCBBall) -> void:
-	_msg("Gutter - ball lost, turn passes")
-	pending_resolve = false
-	_resolve_timer = 0.0
-	_pass_turn()
-
-
-func _on_ball_returned(ball: SCBBall) -> void:
-	## Real-sport rule: a ball that rolls back off the player end returns to the
-	## shooter's rack instead of vanishing. Restore the hand count and, if it is
-	## the active color's ball, immediately hand it back for another flick.
-	world.reinsert_hand_ball(ball)
-	hand_counts[ball.color] += 1
-	pending_resolve = false
-	_resolve_timer = 0.0
-	_msg("%s ball back in hand" % _color_name(ball.color))
-	_update_hud()
-	if ball.color == active_color:
-		_give_active_ball()
-
-
-func _score_slot(slot_index: int) -> int:
-	var sd: Dictionary = world.slot_at(slot_index)
-	return [1, 2, 5][sd["pos"]]
-
-
-func _color_name(c: String) -> String:
-	return "Red" if c == "red" else "Black"
-
-
-# ---------------------------------------------------------------- visuals
-
-## Broadcast-lounge ambiance: soft dark studio backdrop with warm horizon,
-## plus ambient light sourced from the sky so unlit faces still read clearly.
 func _build_env() -> void:
 	var env_n := WorldEnvironment.new()
 	env_n.name = "Environment"
@@ -227,8 +331,6 @@ func _build_env() -> void:
 	wenv.ambient_light_color = Color(1.0, 0.95, 0.88)
 	env_n.environment = wenv
 	add_child(env_n)
-	# Broadcast-grade post + stage floor (v2): ACES tonemap, subtle glow,
-	# and a dark floor so the table reads as furniture on a set, not void.
 	wenv.tonemap_mode = Environment.TONE_MAPPER_ACES
 	wenv.glow_enabled = true
 	wenv.glow_intensity = 0.30
@@ -246,8 +348,6 @@ func _build_env() -> void:
 	add_child(floor)
 
 
-## Key light simulating a studio fixture above the table + a cool fill to
-## lift shadowed ball faces (foundation for the room-lighting cosmetics).
 func _build_lights() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "KeyLight"
@@ -263,7 +363,6 @@ func _build_lights() -> void:
 	fill.light_energy = 0.55
 	fill.omni_range = 6.0
 	add_child(fill)
-	# Rim light behind the far end - lifts the oak edge off the dark backdrop.
 	var rim := OmniLight3D.new()
 	rim.name = "RimLight"
 	rim.position = Vector3(0.0, 0.45, 2.5)
@@ -273,9 +372,6 @@ func _build_lights() -> void:
 	add_child(rim)
 
 
-## Camera frames the whole slope like the broadcast edit: positioned in front
-## of the player end and looking at the table center (yaw/pitch derived from
-## the look_target, so it can never aim away from the board again).
 func _build_camera() -> void:
 	cam = Camera3D.new()
 	cam.name = "Camera3D"
@@ -300,55 +396,13 @@ func _reframe_camera() -> void:
 	cam.position = CameraRigScript.cam_pos(pitch, dist, LOOK_TARGET)
 	cam.look_at(LOOK_TARGET, Vector3.UP)
 	cam.fov = _camera_base_fov
-	print("CAM aspect=", aspect, " pitch=", pitch, " dist=", dist)
 
 
 func _build_guide() -> void:
-	guide_line = Node3D.new()
-	guide_line.name = "Guide"
-	guide_line.visible = false
-	add_child(guide_line)
-
-
-func _update_guide(screen_pos: Vector2) -> void:
-	guide_line.visible = dragging
-	if not dragging or active_ball == null:
-		return
-	var d := screen_pos - drag_start
-	if d.length() < 8.0:
-		return
-	for child in guide_line.get_children():
-		child.queue_free()
-	var vel := Vector3(d.x * 0.0042, 0.0, -d.y * 0.0042)
-	vel = vel.normalized() * clampf(d.length() * Settings.power_scale, 0.6, 3.4)
-	# Analytic stop distance: v^2 / (2 * a), a = g(sin t + mu cos t) ~= 0.97
-	var decel := 0.97
-	var stop_dist := (vel.length() * vel.length()) / (2.0 * decel)
-	var start: Vector3 = active_ball.position
-	var stop: Vector3 = start + Vector3(vel.x, 0.0, vel.z).normalized() * minf(stop_dist, 2.4)
-	var im := ImmediateMesh.new()
-	im.surface_begin(Mesh.PRIMITIVE_LINES)
-	im.surface_add_vertex(start)
-	im.surface_add_vertex(stop)
-	im.surface_end()
-	var line_mesh := MeshInstance3D.new()
-	line_mesh.mesh = im
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(1.0, 0.9, 0.5, 0.85)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	line_mesh.material_override = mat
-	guide_line.add_child(line_mesh)
-	var dot := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.045
-	sm.height = 0.03
-	var dmat := StandardMaterial3D.new()
-	dmat.albedo_color = Color(1.0, 0.95, 0.6, 0.9)
-	dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	dot.mesh = sm
-	dot.material_override = dmat
-	dot.position = stop
-	guide_line.add_child(dot)
+	guide_node = Node3D.new()
+	guide_node.name = "Guide"
+	guide_node.visible = false
+	add_child(guide_node)
 
 
 func _build_hud() -> void:
@@ -372,7 +426,6 @@ func _build_hud() -> void:
 	label_red.set_anchors_preset(Control.PRESET_TOP_LEFT)
 
 	label_black = _add_label("Black 0", Color(0.85, 0.90, 1.0), Vector2(-150, 16), pill)
-	# Right-aligned via the TOP_RIGHT anchor; position.x is measured from right edge.
 	label_black.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	label_black.size = Vector2(120, 44)
 
@@ -381,11 +434,14 @@ func _build_hud() -> void:
 	label_turn.position = Vector2(-130, 16)
 	label_turn.size = Vector2(260, 44)
 
-	label_msg = _add_label("Aim: drag from the ball, release to flick", Color(1.0, 0.95, 0.75), Vector2(-300, 118), null)
+	label_msg = _add_label("Pull the ball down and release to shoot", Color(1.0, 0.95, 0.75), Vector2(-300, 118), null)
 	label_msg.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	label_msg.position = Vector2(-300, 118)
 	label_msg.size = Vector2(600, 0)
 	label_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	_update_power_meter_label()
+	hud_root.add_child(power_bar)
 
 	_vignette = ColorRect.new()
 	_vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -417,6 +473,42 @@ func _update_hud() -> void:
 	label_turn.add_theme_color_override("font_color", Color(1, 0.45, 0.35) if active_color == "red" else Color(0.85, 0.9, 1.0))
 
 
+func _update_power_meter(power: float) -> void:
+	if power_bar == null:
+		return
+	power_bar.visible = true
+	power_bar.value = clampf(power, 0.0, GUTTER_POWER_LIMIT) / GUTTER_POWER_LIMIT * 100.0
+
+
+func _build_power_meter() -> void:
+	power_bar = ProgressBar.new()
+	power_bar.name = "PowerBar"
+	power_bar.show_percentage = false
+	power_bar.min_value = 0.0
+	power_bar.max_value = 100.0
+	power_bar.value = 0.0
+	power_bar.custom_minimum_size = Vector2(320, 20)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.02, 0.02, 0.03, 0.72)
+	bg.set_corner_radius_all(10)
+	bg.set_border_width_all(2)
+	bg.border_color = Color(0.9, 0.82, 0.45, 0.6)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.96, 0.30, 0.12)
+	fill.set_corner_radius_all(10)
+	power_bar.add_theme_stylebox_override("background", bg)
+	power_bar.add_theme_stylebox_override("fill", fill)
+	power_bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	power_bar.position = Vector2(-180, -76)
+	power_bar.size = Vector2(360, 20)
+	power_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	power_bar.visible = false
+
+
+func _update_power_meter_label() -> void:
+	_build_power_meter()
+
+
 func _msg(t: String) -> void:
 	if label_msg == null:
 		return
@@ -438,9 +530,8 @@ func _score_juice(world_pos: Vector3, pts: int) -> void:
 		Input.vibrate_handheld(15)
 	if world_pos != Vector3.ZERO and cam != null:
 		var sp := cam.unproject_position(world_pos)
-		var t := ("+%d" % pts)
 		var l := Label.new()
-		l.text = t
+		l.text = "+%d" % pts
 		l.add_theme_font_size_override("font_size", 44)
 		l.add_theme_color_override("font_color", Color(1.0, 0.92, 0.5))
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

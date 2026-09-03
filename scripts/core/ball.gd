@@ -1,14 +1,15 @@
 class_name SCBBall
 extends RigidBody3D
 
-## Phenolic resin tournament ball (45 g, 40 mm diameter as spec'd by YoTyan).
+## Phenolic resin tournament ball. V2 (Phase 1) sizing: 60 mm / 100 g -
+## the ball is the star of the show on a phone screen; tests/test_physics.gd
+## and docs/PHYSICS_SPEC.md have been updated to match.
 ## Free bodies that rest ON the tilted board: gravity's tangential component
-## decelerates them up the 4.99-degree slope (real behavior), and static
-## friction (0.49 >> tan(4.99 deg) ~ 0.087) holds resting balls in place.
-## Constants tuned by tests/test_physics.gd; see docs/PHYSICS_SPEC.md.
+## decelerates them up the 4.99-degree slope, and static friction
+## (0.49 >> tan(4.99 deg) ~ 0.087) holds resting balls in place.
 
-const RADIUS_M := 0.02
-const MASS_KG := 0.045
+const RADIUS_M := 0.030
+const MASS_KG := 0.100
 const ROLL_DAMP := 0.05  # smooth phenolic roll; resistance comes from the
 # 5-degree slope's gravity component, not artificial braking
 
@@ -88,15 +89,13 @@ func set_mass_properties() -> void:
 	contact_monitor = true
 	max_contacts_reported = 8
 	# CCD is DISABLED: with the 60 Hz fixed step our max shot (3.4 m/s) moves
-	# only 5.7 cm per frame - far below the 2.2 m board - and Jolt's CCD sweep
-	# from a freshly-added body produced spawn artifacts that pushed balls
-	# through the board. Re-enable later only if a tunneling case appears.
+	# only 5.7 cm per frame - far below the 2.2 m board.
 	continuous_cd = false
 	angular_damp = ROLL_DAMP
-	linear_damp = 0.02
+	linear_damp = 0.10
 	# Godot 4: bounce/friction live on a PhysicsMaterial, not the body.
 	var pm := PhysicsMaterial.new()
-	pm.bounce = 0.55
+	pm.bounce = 0.30
 	pm.friction = 0.49
 	physics_material_override = pm
 
