@@ -67,34 +67,25 @@ func _run() -> void:
 	for i in 5:
 		await physics_frame
 
-	# --- C. SLEEPING-BALL LAUNCH (live-device regression, 2026-09 seq2) ---
-	# A served ball rests on the slope and Jolt puts it to sleep within ~1 s.
-	# Assigning linear_velocity on a sleeping body is silently ignored, so
-	# every pull-and-release did literally nothing on the phone. main.gd now
-	# wakes the ball and applies the shot as an impulse.
-	var bug_ball := SCBBall.create("red")
-	root.add_child(bug_ball)
-	bug_ball.position = Vector3(0.0, world.ball_rest_y(0.0, world.LAUNCH_Z), world.LAUNCH_Z)
-	bug_ball.linear_velocity = Vector3.ZERO
-	for i in 10:
+	# --- C. AIM-CREEP (live-device regression, 2026-09 telemetry) ---
+	# The served ball used to be LIVE at the launch spot: on the 5-degree
+	# slope it crept back while the player aimed, rolled off the front edge
+	# (there was NO tray), and free-fell into the void - the "invisible ball".
+	# The serve is now a FROZEN MARKER and the tray exists.
+	world.spawn_hand_ball("red")  # stock the rack (a fresh match state)
+	var marker := world.take_hand_ball("red")
+	_expect(marker != null, "serve returns a marker ball")
+	_expect(marker.freeze, "served ball is a frozen marker (cannot creep)")
+	var pre_bug: Vector3 = marker.position
+	for i in 150:
 		await physics_frame
-	bug_ball.sleeping = true
-	for i in 5:
-		await physics_frame
-	_expect(bug_ball.sleeping, "served ball can be in the slept state (precondition)")
-	var pre_bug := bug_ball.position
-	bug_ball.linear_velocity = Vector3(0.0, 0.0, 1.5)  # the OLD broken launch path
-	for i in 30:
-		await physics_frame
-	var drift_bug: float = (bug_ball.position - pre_bug).length()
-	print("SLEEP_TEST velocity-only drift=%.4f still_sleeping=%s" % [drift_bug, bug_ball.sleeping])
-	# ENGINE TRUTH (4.7.2 + Jolt, measured 2026-09-04): velocity assignment DOES
-	# wake and move a slept body in headless physics (drift 0.44 m). We assert
-	# that so any future engine regression here is caught; the device-side
-	# dead-launch therefore needs on-device logcat evidence, not this theory.
-	_expect(drift_bug > 0.3,
-		"velocity assignment launches even a sleeping ball on this engine (drift %.4f)" % drift_bug)
-	bug_ball.queue_free()
+	var creep: float = (marker.position - pre_bug).length()
+	print("AIM_CREEP drift=%.5f tray=%s" % [creep, world._tray_zone != null])
+	_expect(creep < 0.001,
+		"marker does not move during a 2.5 s aim window (drift %.4f)" % creep)
+	_expect(world._tray_zone != null,
+		"front tray exists so returned balls land, not void-fall")
+	marker.queue_free()
 	for i in 5:
 		await physics_frame
 
@@ -119,6 +110,33 @@ func _run() -> void:
 	_expect(peak_z > pre_fix.z + 0.3,
 		"wake + impulse launches a sleeping ball up-slope (peak z %.2f)" % peak_z)
 	fix_ball.queue_free()
+	for i in 5:
+		await physics_frame
+
+	# --- D. LAUNCH + RETURN-TO-TRAY (live-device regression, 2026-09) ---
+	# The full shot cycle that was broken on device: serve marker -> launch a
+	# fresh live ball -> ball rides up, rolls back (Returned-Ball rule) and
+	# must land in the TRAY and be re-racked - never void-fall again.
+	world.spawn_hand_ball("red")
+	var m := world.take_hand_ball("red")
+	_expect(m != null, "serve returns a marker ball")
+	var live := world.launch_hand_ball(m, Vector3(0.0, 0.0, 2.0))
+	_expect(live != null and not live.freeze, "launch produces a live ball")
+	var d_min_y := 1.0
+	for i in 420:
+		await physics_frame
+		if is_instance_valid(live):
+			d_min_y = minf(d_min_y, live.position.y)
+	print("LAUNCH_TEST min_y=%.4f end_valid=%s rack=%d" % [
+		d_min_y, is_instance_valid(live), (world.hand_balls["red"] as Array).size()])
+	_expect(d_min_y > -0.30,
+		"launched ball lands in the tray, never the void (min y %.3f)" % d_min_y)
+	_expect(not is_instance_valid(live) or live.freeze,
+		"ball resolved (returned and re-racked or captured)")
+	# Second serve cycle from the re-racked pool (was 15 m / 92 m void on device).
+	var m2 := world.take_hand_ball("red")
+	_expect(m2 != null, "second serve from re-racked pool works")
+	m2.queue_free()
 	for i in 5:
 		await physics_frame
 

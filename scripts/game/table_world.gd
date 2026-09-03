@@ -258,6 +258,14 @@ func build() -> void:
 	add_child(_rail_cap(-1.0))
 	add_child(_rail_cap(1.0))
 
+	# --- Front tray (the Returned-Ball rule needs a place to land!) ---
+	# LIVE-PROVEN (2026-09 device + bisect): _tray_zone/_tray_floor were
+	# declared but NEVER built, so every ball that rolled back off the player
+	# end free-fell into the void. The served ball also creeps back down the
+	# slope while the player aims and vanishes the same way - the "invisible
+	# ball" report. The tray gives returned balls a physical home.
+	_build_tray()
+
 	# --- Scoring pockets: the star-edged troughs (THE table fix) ---
 	_build_pockets(wood_mat)
 func _build_pockets(wood_mat: StandardMaterial3D) -> void:
@@ -325,6 +333,52 @@ func _build_pockets(wood_mat: StandardMaterial3D) -> void:
 				tooth.position = Vector3(hx + side * (0.055), sy + (0.007), cz - SLOT_W * (0.40))
 				tooth.rotation.y = -side * (0.85)
 				add_child(tooth)
+## The player-end tray: returned balls land here and are re-racked.
+## Floor top at y=-0.13 (the height test A's comment always assumed), walls
+## on all open sides so a returned ball rests instead of escaping.
+func _build_tray() -> void:
+	var wood_mat := _wood_material()
+	var bodies := [
+		# floor: x -0.64..0.64, top at -0.13, z -0.26..0.0
+		{"size": Vector3(1.28, 0.04, 0.26), "pos": Vector3(0.0, -0.15, -0.13)},
+		# front wall (player side)
+		{"size": Vector3(1.28, 0.12, 0.04), "pos": Vector3(0.0, -0.09, -0.24)},
+		# side walls
+		{"size": Vector3(0.04, 0.12, 0.26), "pos": Vector3(-0.62, -0.09, -0.13)},
+		{"size": Vector3(0.04, 0.12, 0.26), "pos": Vector3(0.62, -0.09, -0.13)},
+	]
+	for r in bodies:
+		var st := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var rb := BoxShape3D.new()
+		rb.size = r.size
+		cs.shape = rb
+		st.add_child(cs)
+		st.position = r.pos
+		st.collision_layer = 1
+		st.collision_mask = 2
+		add_child(st)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = r.size
+		mi.mesh = bm
+		mi.material_override = wood_mat
+		mi.position = r.pos
+		add_child(mi)
+	# Return-detection zone hovering over the tray floor.
+	_tray_zone = Area3D.new()
+	var zs := CollisionShape3D.new()
+	var zb := BoxShape3D.new()
+	zb.size = Vector3(1.2, 0.10, 0.22)
+	zs.shape = zb
+	_tray_zone.add_child(zs)
+	_tray_zone.position = Vector3(0.0, -0.10, -0.13)
+	_tray_zone.collision_layer = 0
+	_tray_zone.collision_mask = 2
+	_tray_zone.monitoring = true
+	add_child(_tray_zone)
+
+
 func _physics_process(_delta: float) -> void:
 	if _tracked.size() == 0:
 		return
@@ -336,6 +390,12 @@ func _physics_process(_delta: float) -> void:
 			continue
 		var bb := b as SCBBall
 		if bb.freeze:
+			continue
+		# Out-of-world guard: a ball that escaped the board (tunneled, knocked
+		# over a rail) resolves INSTANTLY as a returned ball instead of hanging
+		# the shot until the flush delay.
+		if bb.position.y < -0.5 or absf(bb.position.x) > 3.0 or bb.position.z > 3.5:
+			_resolve_ball(t)
 			continue
 		var spd := bb.linear_velocity.length()
 		if spd > SLOT_CAPTURE_SPEED:
@@ -458,17 +518,45 @@ func reinsert_hand_ball(b: SCBBall) -> void:
 	b.rotation = Vector3.ZERO
 
 
-## Unfreezes and returns an in-hand ball placed at the launch point.
+## Serves an in-hand ball as a FROZEN MARKER at the launch point.
+## LIVE-PROVEN (2026-09 device telemetry + headless bisect): a LIVE ball at
+## the launch spot creeps back down the 5-degree slope while the player aims,
+## rolls off the board's front edge (there was no tray), and free-falls into
+## the void - the "invisible ball" that every shot then fired at (y -15 m and
+## -92 m at release). The marker cannot move; launch_hand_ball turns it into
+## a fresh live ball at the exact same transform at release time.
 func take_hand_ball(color: String) -> SCBBall:
 	if hand_balls[color].is_empty():
 		return null
-	var b: SCBBall = hand_balls[color].pop_back()
-	b.freeze = false
-	b.collision_layer = 2
-	b.collision_mask = 3
-	b.sleeping = false  # serve awake - a sleeping ball ignores launch impulses
-	b.linear_velocity = Vector3.ZERO
-	b.angular_velocity = Vector3.ZERO
+	var pooled: SCBBall = hand_balls[color].pop_back()
+	if pooled != null and is_instance_valid(pooled):
+		pooled.queue_free()
+	var b := SCBBall.create(color)
+	b.freeze = true          # display marker - cannot creep, cannot fall
+	b.collision_layer = 0
+	b.collision_mask = 0
+	# TRANSFORM BEFORE add_child (Jolt must register it at the launch spot).
 	b.position = Vector3(0.0, ball_rest_y(0.0, LAUNCH_Z), LAUNCH_Z)
 	b.rotation = Vector3.ZERO
+	add_child(b)
+	print("SCB serve %s marker at %s" % [color, b.position])
+	return b
+
+
+## Fires the shot: replaces the frozen marker with a FRESH live ball at the
+## same transform and gives it its velocity on the very first frame (the
+## pattern test A proves safe). Returns the live ball, already tracked by
+## the settle-detector. A fresh body never carries stale physics state.
+func launch_hand_ball(marker: SCBBall, velocity: Vector3) -> SCBBall:
+	if marker == null or not is_instance_valid(marker):
+		return null
+	var pos: Vector3 = marker.position
+	marker.queue_free()
+	var b := SCBBall.create(marker.color)
+	b.position = pos
+	add_child(b)
+	b.linear_velocity = velocity
+	b.angular_velocity = Vector3.ZERO
+	track_live(b)
+	print("SCB launch fresh at %s v=%s" % [pos, velocity])
 	return b

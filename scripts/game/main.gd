@@ -116,24 +116,24 @@ func _release_shot(screen_pos: Vector2) -> void:
 	active_ball.is_active = false
 	_resolve_elapsed = 0.0
 	var power := clampf(len * SLING_K, MIN_POWER, GUTTER_POWER_LIMIT)
-	# FIX: ball ALWAYS launches up-table (+Z). Drag distance = power; horizontal
-	# drag = aim angle. Pull down OR flick up both fire up the slope, so a shot
-	# can never fire backward into the tray (old sign logic did).
+	# Ball ALWAYS launches up-table (+Z). Drag distance = power; horizontal
+	# drag = aim angle. Pull down OR flick up both fire up the slope.
 	var lateral := clampf(pull.x / maxf(len, 0.001), -0.85, 0.85)
 	var angle := asin(lateral)
 	var dir := Vector3(sin(angle), 0.0, cos(angle)).normalized()
-	# CRITICAL FIX (live-proven on device): a served ball comes to rest on the
-	# slope and Jolt puts it to SLEEP within ~1 s. Assigning linear_velocity on
-	# a sleeping RigidBody3D is silently ignored - shots did literally nothing.
-	# Wake the body first, then apply the shot as an impulse (impulse wakes
-	# bodies; direct velocity assignment does not). impulse = m * dv, so with
-	# the ball at rest the result is exactly linear_velocity = dir * power.
-	print("SCB release len=%.0f power=%.2f angle=%.2f was_sleeping=%s" % [len, power, angle, active_ball.sleeping])
-	active_ball.sleeping = false
-	active_ball.apply_central_impulse(dir * power * active_ball.mass)
+	# LIVE-PROVEN (2026-09 device): the served ball is a FROZEN MARKER (a live
+	# ball creeps back down the slope while the player aims and falls into the
+	# void). The shot replaces the marker with a FRESH live ball at the exact
+	# same transform, velocity on its first frame - the pattern test A proves.
+	print("SCB release len=%.0f power=%.2f angle=%.2f marker=%s" % [
+		len, power, angle, active_ball.freeze])
+	var launched := world.launch_hand_ball(active_ball, dir * power)
+	if launched == null:
+		print("SCB LAUNCH FAILED - marker invalid")
+		active_ball = null
+		return
+	active_ball = launched
 	print("SCB LAUNCH v=%s pos=%s" % [active_ball.linear_velocity, active_ball.position])
-	world.track_live(active_ball)
-	active_ball = null
 	pending_resolve = true
 	_fov_punch = 0.8
 
