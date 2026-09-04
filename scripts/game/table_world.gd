@@ -38,7 +38,7 @@ const SLOTS_PER_POS := 7
 const POS_Z := [0.75, 1.45, 2.15]     # astrolabe medallion centres (near..far)
 const MEDAL_R := 0.155                # brass ring radius of one medallion
 const CLUSTER_R := 0.096              # hex-flower ring radius (socket centres)
-const SOCKET_R := 0.028               # socket cup radius
+const SOCKET_R := 0.037               # socket cup radius (ball r=0.030 - the cup must be BIGGER so the ball sits visibly in the groove)
 const POCKET_X_HALF := 0.60             # playable half-width the bands span
 const PLAY_LINE_Z := 0.35
 const LAUNCH_Z := 0.22                # ball spawn behind the play line
@@ -383,19 +383,20 @@ func _build_astrolabes() -> void:
 			area.collision_mask = 2
 			area.monitoring = true
 			add_child(area)
-			# The socket cup: dark circular recess with a brass rim.
+			# The socket cup: a REAL recessed groove - dark bowl sunk below the
+			# marble with a brass rim, so a captured ball visibly sits IN it.
 			var cup := MeshInstance3D.new()
 			var cm := CylinderMesh.new()
 			cm.top_radius = SOCKET_R
-			cm.bottom_radius = SOCKET_R * 0.82
-			cm.height = 0.004
+			cm.bottom_radius = SOCKET_R * 0.72
+			cm.height = 0.010
 			var cup_mat := StandardMaterial3D.new()
 			cup_mat.albedo_color = Color(0.05, 0.05, 0.06)
 			cup_mat.metallic = 0.5
 			cup_mat.roughness = 0.4
 			cup.mesh = cm
 			cup.material_override = cup_mat
-			cup.position = Vector3(sp.x, sy + 0.001, sp.z)
+			cup.position = Vector3(sp.x, sy - 0.002, sp.z)
 			add_child(cup)
 			var rim := MeshInstance3D.new()
 			var tm := TorusMesh.new()

@@ -220,12 +220,16 @@ func _draw_trajectory(start: Vector3, angle: float, power: float) -> void:
 	var x := ShotMath.lateral_drift(power, angle)
 	x = clampf(x, -0.42, 0.42)
 	var land := Vector3(x, world.surface_y_at(x, z) + 0.004, z)
-	const STEPS := 14
+	# 2026-09 live feedback: players want a SMALL aim line, not a full-path
+	# arc. Three subtle segments straight out of the ball show direction; the
+	# landing ring keeps showing where the shot settles.
+	var dir := Vector3(sin(angle), 0.0, cos(angle)).normalized()
+	const LINE_LEN := 0.24
+	const SEG := 3
 	var prev: Vector3 = start
-	for i in range(1, STEPS + 1):
-		var t := float(i) / float(STEPS)
-		var p := start.lerp(land, t)
-		p.y += 0.028 * sin(PI * t)
+	for i in range(1, SEG + 1):
+		var p := start + dir * (LINE_LEN * float(i) / float(SEG))
+		p.y = world.surface_y_at(p.x, p.z) + 0.004
 		_add_guide_segment(prev, p)
 		prev = p
 	_add_landing_marker(land)
