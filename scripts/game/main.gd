@@ -69,7 +69,7 @@ func _ready() -> void:
 		world.spawn_hand_ball("red")
 		world.spawn_hand_ball("black")
 	_give_active_ball()
-	print("SCB_MAIN_VERSION=v7-grooves-20260904 SLING_K=%s serve=%s" % [
+	print("SCB_MAIN_VERSION=v9-slate-20260904 SLING_K=%s serve=%s" % [
 		SLING_K, (active_ball.position if active_ball != null else Vector3.INF)])
 
 
@@ -448,7 +448,7 @@ func _build_env() -> void:
 	sky.sky_material = psky
 	wenv.sky = sky
 	wenv.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	wenv.ambient_light_energy = 1.0
+	wenv.ambient_light_energy = 0.55
 	wenv.ambient_light_color = Color(0.92, 0.95, 1.0)
 	env_n.environment = wenv
 	add_child(env_n)
@@ -490,21 +490,21 @@ func _build_lights() -> void:
 	sun.name = "KeyLight"
 	sun.shadow_enabled = true
 	sun.light_color = Color(1.0, 0.96, 0.86)
-	sun.light_energy = 2.4
+	sun.light_energy = 1.1
 	sun.rotation_degrees = Vector3(-58.0, 24.0, 0.0)
 	add_child(sun)
 	var fill := OmniLight3D.new()
 	fill.name = "FillLight"
 	fill.position = Vector3(1.25, 0.7, -0.55)
 	fill.light_color = Color(0.78, 0.84, 1.0)
-	fill.light_energy = 0.7
+	fill.light_energy = 0.35
 	fill.omni_range = 6.0
 	add_child(fill)
 	var rim := OmniLight3D.new()
 	rim.name = "RimLight"
 	rim.position = Vector3(0.0, 0.45, 2.5)
 	rim.light_color = Color(1.0, 0.92, 0.8)
-	rim.light_energy = 0.55
+	rim.light_energy = 0.3
 	rim.omni_range = 3.2
 	add_child(rim)
 

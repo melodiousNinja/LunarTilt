@@ -170,7 +170,15 @@ func _wood_material() -> StandardMaterial3D:
 func _surface_material() -> ShaderMaterial:
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/marble.gdshader")
+	# Modern broadcast palette: deep slate body with teal veining (player and
+	# ball colours pop against it; brass lines read as inlays).
 	mat.set_shader_parameter("vein_scale", 4.0)
+	# Satin stone, not mirror: at the camera's grazing angle a low-roughness
+	# surface Fresnel-reflects the bright sky and washes the body out to white.
+	mat.set_shader_parameter("body_col", Color(0.16, 0.20, 0.22))
+	mat.set_shader_parameter("vein_col", Color(0.13, 0.40, 0.38))
+	mat.set_shader_parameter("rough_min", 0.34)
+	mat.set_shader_parameter("rough_max", 0.55)
 	return mat
 
 
@@ -396,7 +404,7 @@ func _build_astrolabes() -> void:
 			cup_mat.roughness = 0.4
 			cup.mesh = cm
 			cup.material_override = cup_mat
-			cup.position = Vector3(sp.x, sy - 0.002, sp.z)
+			cup.position = Vector3(sp.x, sy - 0.007, sp.z)  # top 2 mm BELOW marble = a true recess
 			add_child(cup)
 			var rim := MeshInstance3D.new()
 			var tm := TorusMesh.new()
@@ -404,7 +412,7 @@ func _build_astrolabes() -> void:
 			tm.outer_radius = SOCKET_R + 0.006
 			rim.mesh = tm
 			rim.material_override = brass
-			rim.position = Vector3(sp.x, sy + 0.003, sp.z)
+			rim.position = Vector3(sp.x, sy - 0.0045, sp.z)  # torus top flush with the marble (inlaid ring, no proud lip)
 			add_child(rim)
 			slots.append({"band": bi, "col": si, "area": area, "color": "",
 				"cup": cup_mat})
@@ -498,19 +506,56 @@ func _physics_process(_delta: float) -> void:
 		var spd := bb.linear_velocity.length()
 		if spd > (0.03):
 			_any_moving = true
+		# Socket funnel: inside a cup, a gentle centre-pull + damping dips the
+		# ball into the groove so slow balls visibly get CAUGHT by the pocket.
+		# Speed-gated: a ball faster than the capture speed skims the groove
+		# untouched - the funnel must never bend a fast shot's path.
+		var near := _socket_overlapping(bb)
+		if not near.is_empty() and spd <= SLOT_CAPTURE_SPEED:
+			var center: Vector3 = (near["area"] as Area3D).global_position
+			var to_c := center - bb.global_position
+			to_c.y = 0.0
+			if to_c.length() > 0.001:
+				bb.apply_central_force(to_c.normalized() * bb.mass * 1.6)
+			bb.linear_velocity *= 0.985
 		# Zone-aware settle (see FELT_REST_SPEED above): decisive zones settle
 		# fast; open felt requires true rest so roll-backs finish their arc.
 		if spd > FELT_REST_SPEED:
 			t["frames"] = 0
+			t["anchor"] = bb.position
 			still.append(t)
 			continue
 		t["frames"] = int(t["frames"]) + 1
-		var need := SETTLE_FRAMES
+		if t.get("anchor") == null:
+			t["anchor"] = bb.position
+		# OPEN FELT: the sport's path rule - a ball that fails to reach a
+		# groove keeps its FULL arc: it rolls back down to the player's tray.
+		# We never freeze a ball mid-board. If the engine's static friction
+		# pins it on the slope (mu > tan 5 deg), nudge it down-slope; only a
+		# ball still pinned after 3 nudges is resolved (as a returned ball).
 		if _socket_overlapping(bb).is_empty() \
 				and not (_tray_zone != null and _tray_zone.overlaps_body(b)) \
 				and not (gutter != null and gutter.overlaps_body(b)):
-			need = FELT_SETTLE_FRAMES
-		if int(t["frames"]) >= need:
+			var anchor: Variant = t.get("anchor")
+			var pinned := anchor != null \
+					and (bb.position - (anchor as Vector3)).length() <= 0.004
+			if not pinned:
+				t["frames"] = 0
+				t["anchor"] = bb.position
+				t["nudges"] = 0
+				still.append(t)
+				continue
+			t["nudges"] = int(t.get("nudges", 0)) + 1
+			if int(t["nudges"]) <= 3:
+				bb.sleeping = false
+				bb.apply_central_impulse(Vector3(0.0, 0.0, -0.4) * bb.mass)
+				t["frames"] = 0
+				t["anchor"] = bb.position
+				still.append(t)
+				continue
+			_resolve_ball(t)
+			continue
+		if int(t["frames"]) >= SETTLE_FRAMES:
 			_resolve_ball(t)
 			continue
 		still.append(t)

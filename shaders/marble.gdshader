@@ -1,14 +1,14 @@
 shader_type spatial;
 render_mode cull_back;
 
-// Procedural white-marble playing surface (factory spec: the real YoTyan
-// table is marble - smooth and cool). Grey-blue veins wandering through a
-// warm white body, polished to a soft sheen so balls glide and lights skip.
-uniform vec3 body_col : source_color = vec3(0.91, 0.89, 0.85);
-uniform vec3 vein_col : source_color = vec3(0.42, 0.50, 0.62);
+// Modern slate playing surface - deep blue-grey stone with faint teal
+// veins and a scatter of pale "star" specks (Star Cluster branding).
+// Satin roughness: lights pool softly instead of blowing out to white.
+uniform vec3 body_col : source_color = vec3(0.15, 0.19, 0.24);
+uniform vec3 vein_col : source_color = vec3(0.22, 0.52, 0.54);
 uniform float vein_scale = 4.0;
-uniform float rough_min : hint_range(0.0, 1.0) = 0.07;
-uniform float rough_max : hint_range(0.0, 1.0) = 0.24;
+uniform float rough_min : hint_range(0.0, 1.0) = 0.30;
+uniform float rough_max : hint_range(0.0, 1.0) = 0.55;
 
 float hash21(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -39,9 +39,10 @@ void fragment() {
 	float w = fbm(uv + warp * 1.5);
 	float band = abs(fract(w * 3.0) - 0.5) * 2.0;
 	float veins = smoothstep(0.0, 0.35, band);
-	float speck = step(0.985, hash21(floor(uv * 22.0)));
+	float speck = step(0.982, hash21(floor(uv * 22.0)));
 	vec3 col = mix(vein_col, body_col, veins);
-	col = mix(col, vec3(0.98), speck * 0.5);
+	// Pale star specks, dimmed so they twinkle rather than glare.
+	col = mix(col, vec3(0.80, 0.85, 0.92), speck * 0.55);
 	ALBEDO = col;
 	ROUGHNESS = mix(rough_min, rough_max, veins);
 	METALLIC = 0.0;
