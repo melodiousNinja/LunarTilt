@@ -9,7 +9,7 @@ extends RigidBody3D
 ## (0.49 >> tan(4.99 deg) ~ 0.087) holds resting balls in place.
 
 const RADIUS_M := 0.030
-const MASS_KG := 0.100
+const MASS_KG := 0.005  # factory spec: 5 g chrome-steel ball
 const ROLL_DAMP := 0.05  # smooth phenolic roll; resistance comes from the
 # 5-degree slope's gravity component, not artificial braking
 
@@ -64,18 +64,28 @@ func configure_material() -> void:
 	var sm := SphereMesh.new()
 	sm.radius = RADIUS_M
 	sm.height = RADIUS_M * 2.0
+	sm.radial_segments = 48
+	sm.rings = 24
 	var mat := StandardMaterial3D.new()
 	if color == "red":
-		mat.albedo_color = Color(0.84, 0.14, 0.09)
+		# Deep tournament crimson (the factory set's lacquered cherry red).
+		mat.albedo_color = Color(0.66, 0.075, 0.045)
 	else:
-		mat.albedo_color = Color(0.09, 0.09, 0.09)
-	# Lacquered phenolic: tight gloss + clearcoat micro-glints + specular sheen.
-	mat.roughness = 0.10
+		# Obsidian black with a hint of blue so it reads on dark stages.
+		mat.albedo_color = Color(0.035, 0.037, 0.045)
+	# Show-billiard finish: near-mirror lacquer, strong clearcoat glint and a
+	# rim term so the sphere silhouette always separates from the marble.
+	mat.roughness = 0.07
 	mat.metallic = 0.0
-	mat.clearcoat = 0.6
-	mat.clearcoat_roughness = 0.08
+	mat.clearcoat = 0.9
+	mat.clearcoat_roughness = 0.06
+	mat.rim_enabled = true
+	mat.rim = 0.45
+	mat.rim_tint = 0.25
+	mat.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 	mesh.mesh = sm
 	mesh.material_override = mat
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	add_child(mesh)
 	_mesh_instance = mesh
 	_mat = mat

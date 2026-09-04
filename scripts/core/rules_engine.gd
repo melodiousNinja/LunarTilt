@@ -108,9 +108,19 @@ static func shot_scored(shot_slots: Array) -> bool:
 	return false
 
 
+## Hex-flower cluster adjacency (factory astrolabe): socket 0 is the centre,
+## sockets 1..6 form the ring. The centre touches every ring socket; a ring
+## socket touches the centre and its two ring neighbours (cyclic).
+const SOCKET_NEIGHBORS := [
+	[1, 2, 3, 4, 5, 6],
+	[0, 2, 6], [0, 1, 3], [0, 2, 4],
+	[0, 3, 5], [0, 4, 6], [0, 5, 1],
+]
+
+
 ## OFFICIAL GROUPING decision for a ball settling on socket `col` of a
-## position whose sockets hold `occupancy` ("" / "red" / "black", column
-## order). Returns { action: "claim"|"displace"|"block",
+## position whose sockets hold `occupancy` ("" / "red" / "black", socket
+## index order). Returns { action: "claim"|"displace"|"block",
 ##                    displace_col: int (-1 none),
 ##                    keep_shooting: bool }.
 ##   - EMPTY socket, no same-colour neighbour  -> claim; the ball STAYS on the
@@ -122,10 +132,10 @@ static func shot_scored(shot_slots: Array) -> bool:
 ##     rests against it as a grouping wall; no score, turn passes.
 static func resolve_socket(occupancy: Array, col: int, color: String) -> Dictionary:
 	var n := occupancy.size()
-	if col < 0 or col >= n:
+	if col < 0 or col >= n or col >= SOCKET_NEIGHBORS.size():
 		return {"action": "block", "displace_col": -1, "keep_shooting": false}
-	for nb in [col - 1, col + 1]:
-		if nb >= 0 and nb < n and String(occupancy[nb]) == color:
+	for nb in SOCKET_NEIGHBORS[col]:
+		if nb < n and String(occupancy[nb]) == color:
 			return {"action": "displace", "displace_col": nb, "keep_shooting": true}
 	var occ := String(occupancy[col])
 	if occ == "":

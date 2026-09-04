@@ -31,8 +31,9 @@ func _run() -> void:
 	# --- A. pure decision table (RulesEngine.resolve_socket) ---
 	var occ: Array = ["", "", "red", "", "black", "", ""]
 	var d := RulesEngine.resolve_socket(occ, 0, "red")
-	_expect(String(d["action"]) == "claim" and not bool(d["keep_shooting"]),
-		"empty far socket -> plain claim, turn passes")
+	_expect(String(d["action"]) == "displace" and int(d["displace_col"]) == 2
+		and bool(d["keep_shooting"]),
+		"centre socket touches the whole ring: own ball at col 2 is displaced")
 	d = RulesEngine.resolve_socket(occ, 2, "red")
 	_expect(String(d["action"]) == "displace" and int(d["displace_col"]) == 2,
 		"landing on an own ball displaces it and keeps the turn")
@@ -78,8 +79,8 @@ func _run() -> void:
 	# --- C. live claim: a settling ball claims an empty socket ---
 	var b := SCBBall.create("red")
 	root.add_child(b)
-	b.position = Vector3(world.slot_center_x(3),
-		world.ball_rest_y(0.0, world.POS_Z[1]), world.POS_Z[1])
+	var sp: Vector3 = world.socket_pos(1, 3)
+	b.position = Vector3(sp.x, world.ball_rest_y(sp.x, sp.z), sp.z)
 	world.track_live(b)
 	for i in 60:
 		await physics_frame
@@ -96,13 +97,13 @@ func _run() -> void:
 	var rack_before: int = (world.hand_balls["red"] as Array).size()
 	var n := SCBBall.create("red")
 	root.add_child(n)
-	n.position = Vector3(world.slot_center_x(2),
-		world.ball_rest_y(0.0, world.POS_Z[1]), world.POS_Z[1])
+	var sp2: Vector3 = world.socket_pos(1, 2)
+	n.position = Vector3(sp2.x, world.ball_rest_y(sp2.x, sp2.z), sp2.z)
 	world._claim_socket(world.slots[9], n)   # band 1, col 2 claimed
 	var inc := SCBBall.create("red")
 	root.add_child(inc)
-	inc.position = Vector3(world.slot_center_x(3),
-		world.ball_rest_y(0.0, world.POS_Z[1]), world.POS_Z[1])
+	var sp3: Vector3 = world.socket_pos(1, 3)
+	inc.position = Vector3(sp3.x, world.ball_rest_y(sp3.x, sp3.z), sp3.z)
 	inc.linear_velocity = Vector3.ZERO
 	var keep := [false]
 	var scored_band := [-1]

@@ -38,7 +38,7 @@ func _run() -> void:
 	var pts: Array = TableWorldScript.frame_points()
 	for pt: Vector3 in pts:
 		_expect(pt.x >= -1.0 and pt.x <= 1.0, "frame x in range: %s" % pt)
-		_expect(pt.z >= -0.3 and pt.z <= 2.4, "frame z in range: %s" % pt)
+		_expect(pt.z >= -0.3 and pt.z <= 3.05, "frame z in range: %s" % pt)
 		_expect(pt.y >= -0.1 and pt.y <= 0.25, "frame y in range: %s" % pt)
 
 	# --- C. Hand-ball racks: spaced, on correct sides, 12 per color ---
@@ -56,22 +56,31 @@ func _run() -> void:
 		_expect(absf((b - a).length() - TableWorldScript.RACK_PITCH) < 0.0001,
 			"consecutive rack spacing at index %d" % idx)
 
-# --- D. Slot lanes stay inside the table (v3 regression: plates once hung
-	# off a 1.2 m board because the X pitch was 0.42 m) ---
+# --- D. Medallion geometry stays inside the table (v3: plates once hung off
+	# the board; v5: three astrolabe medallions down the centreline) ---
 	var w_half: float = TableWorldScript.TABLE_WID * (0.5)
-	_expect(TableWorldScript.slot_center_x(0) >= -w_half,
-		"leftmost slot inside the table (x=%.3f)" % TableWorldScript.slot_center_x(0))
-	_expect(TableWorldScript.slot_center_x(6) <= w_half,
-		"rightmost slot inside the table (x=%.3f)" % TableWorldScript.slot_center_x(6))
-	var span: float = TableWorldScript.slot_center_x(6) - TableWorldScript.slot_center_x(0)
-	_expect(absf(span - 6.0 * TableWorldScript.SLOT_PITCH) < (0.001),
-		"lane X spacing even (span=%.3f)" % span)
-	var lane_half: float = TableWorldScript.SLOT_PITCH * (0.5)
-	_expect(absf(TableWorldScript.slot_center_x(0)) >= lane_half,
-		"edge lane fully on the felt (center minus half-width)")
-	# Visual-only teeth must sit inside the playable width too.
-	_expect(TableWorldScript.slot_center_x(6) + (0.06) <= w_half,
-		"outer tooth hook stays on the table (x=%.3f)" % (TableWorldScript.slot_center_x(6) + (0.06)))
+	var all_sockets_inside := true
+	var max_reach := 0.0
+	for bi in range(3):
+		for si in range(7):
+			var sp: Vector3 = TableWorldScript.socket_pos(bi, si)
+			all_sockets_inside = all_sockets_inside and absf(sp.x) <= w_half
+			max_reach = maxf(max_reach, absf(sp.x))
+	_expect(all_sockets_inside,
+		"all 21 sockets inside the table width (max |x|=%.3f)" % max_reach)
+	_expect(max_reach + TableWorldScript.SOCKET_R <= w_half,
+		"outermost socket cup fully on the marble (reach=%.3f)" % max_reach)
+	# Medallions spaced down the length: inside the board, never overlapping.
+	var z_ok := true
+	for bi in range(3):
+		var cz: float = TableWorldScript.POS_Z[bi]
+		z_ok = z_ok and cz > 0.3 and cz < TableWorldScript.TABLE_LEN - 0.3
+		if bi > 0:
+			z_ok = z_ok and (TableWorldScript.POS_Z[bi] - TableWorldScript.POS_Z[bi - 1]) > 2.0 * TableWorldScript.MEDAL_R
+	_expect(z_ok, "medallion centres spaced and inside the board length")
+	# The socket cluster must fit within its medallion ring.
+	_expect(TableWorldScript.CLUSTER_R + TableWorldScript.SOCKET_R <= TableWorldScript.MEDAL_R,
+		"hex-flower cluster fits inside the brass ring")
 	print("V2_LAYOUT_TEST total=%d failures=%d" % [_total, _failures])
 	if _failures == 0:
 		print("ALL TESTS PASSED")

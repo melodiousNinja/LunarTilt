@@ -24,7 +24,7 @@ signal ball_returned(ball: SCBBall)
 signal ball_displaced(ball: SCBBall)
 signal ball_grouped(ball: SCBBall)
 
-const TABLE_LEN := 2.2      # Z axis (player end at Z=0, far end at Z=2.2)
+const TABLE_LEN := 2.9      # Z axis (player end at Z=0, far end at Z=2.9)
 const TABLE_WID := 1.2      # X axis
 const TILT_DEG := 4.99
 const BOARD_THICK := 0.06
@@ -35,10 +35,11 @@ const RAIL_H_TOTAL := 0.30
 const RAIL_TOP_Y := -0.03 + RAIL_H_TOTAL * 0.5
 
 const SLOTS_PER_POS := 7
-const POS_Z := [0.62, 1.10, 1.58]     # pocket band centers (closest..furthest)
-const SLOT_W := 0.16                  # pocket band depth (Z)
-const SLOT_PITCH :=(0.15)              # pocket X pitch (7 lanes evenly across +-0.45)
-const POCKET_X_HALF :=(0.60)           # playable half-width the bands span
+const POS_Z := [0.75, 1.45, 2.15]     # astrolabe medallion centres (near..far)
+const MEDAL_R := 0.155                # brass ring radius of one medallion
+const CLUSTER_R := 0.096              # hex-flower ring radius (socket centres)
+const SOCKET_R := 0.028               # socket cup radius
+const POCKET_X_HALF := 0.60             # playable half-width the bands span
 const PLAY_LINE_Z := 0.35
 const LAUNCH_Z := 0.22                # ball spawn behind the play line
 
@@ -110,15 +111,21 @@ static func rack_spot(color: String, index: int) -> Vector3:
 
 ## X center of slot lane `si` (shared across all three bands). Regression guard:
 ## v3 briefly spaced lanes 0.42 m apart - half the plates hung off the board.
-static func slot_center_x(si: int) -> float:
-	return -0.45 + si * SLOT_PITCH
+## World position of socket `si` (0 = centre, 1..6 = hex ring) of position
+## `bi`. XZ only - callers add the tilted surface height.
+static func socket_pos(bi: int, si: int) -> Vector3:
+	var cz: float = POS_Z[clampi(bi, 0, POS_Z.size() - 1)]
+	if si <= 0:
+		return Vector3(0.0, 0.0, cz)
+	var ang := (60.0 * float(si - 1) + 90.0) * PI / 180.0
+	return Vector3(cos(ang) * CLUSTER_R, 0.0, cz + sin(ang) * CLUSTER_R)
 
 
 ## 8 corners of the visual frame we care about (racks + tray + table + gutter).
 static func frame_points() -> Array:
 	var pts: Array = []
 	for x in [-0.92, 0.92]:
-		for z in [-0.24, 2.28]:
+		for z in [-0.24, 3.0]:
 			for y in [-0.06, 0.16]:
 				pts.append(Vector3(x, y, z))
 	return pts
@@ -126,9 +133,13 @@ static func frame_points() -> Array:
 ## albedo (no asset files needed, stays small for mobile).
 func _wood_material() -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.46, 0.29, 0.17)
-	mat.roughness = 0.62
+	# Deep walnut; the grain texture (greyscale noise) modulates it.
+	mat.albedo_color = Color(0.20, 0.115, 0.065)
+	mat.roughness = 0.38
 	mat.metallic = 0.0
+	mat.clearcoat_enabled = true
+	mat.clearcoat = 0.7
+	mat.clearcoat_roughness = 0.22
 	var grain := NoiseTexture2D.new()
 	var ns := FastNoiseLite.new()
 	ns.noise_type = FastNoiseLite.TYPE_SIMPLEX
@@ -141,22 +152,13 @@ func _wood_material() -> StandardMaterial3D:
 	return mat
 
 
-## Tournament felt material with a subtle pile normal (visual only).
-func _felt_material() -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.09, 0.27, 0.13)
-	mat.roughness = 0.95
-	var pile_n := NoiseTexture2D.new()
-	var pile := FastNoiseLite.new()
-	pile.noise_type = FastNoiseLite.TYPE_SIMPLEX
-	pile.frequency = 21.0
-	pile.seed = 7
-	pile_n.noise = pile
-	pile_n.width = 128
-	pile_n.height = 128
-	mat.normal_enabled = true
-	mat.normal_texture = pile_n
-	mat.normal_scale = 0.05
+## Factory-spec playing surface: polished white marble with wandering
+## grey-blue veins (the real YoTyan table is marble). Procedural shader, so
+## it stays crisp at any resolution and needs no texture assets.
+func _surface_material() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/marble.gdshader")
+	mat.set_shader_parameter("vein_scale", 4.0)
 	return mat
 
 
@@ -192,7 +194,7 @@ func _ready() -> void:
 	build()
 func build() -> void:
 	var wood_mat := _wood_material()
-	var felt_mat := _felt_material()
+	var surface_mat := _surface_material()
 
 	# --- Board physics (4.99 deg tilt: +Z end raised) ---
 	board = StaticBody3D.new()
@@ -221,11 +223,41 @@ func build() -> void:
 	var felt_bm := BoxMesh.new()
 	felt_bm.size = Vector3(TABLE_WID, 0.006, TABLE_LEN)
 	felt_mesh.mesh = felt_bm
-	felt_mesh.material_override = felt_mat
+	felt_mesh.material_override = surface_mat
 	var felt_center := surface_y_at(0.0, TABLE_LEN * 0.5) + 0.0035
 	felt_mesh.position = Vector3(0.0, felt_center, TABLE_LEN * 0.5)
 	felt_mesh.rotation.x = board.rotation.x
 	add_child(felt_mesh)
+
+	# --- Guard lines (factory look): brass boundary inlays along both side
+	# rails plus a white foul line at the shooting end, laid ON the marble ---
+	var brass_inlay := StandardMaterial3D.new()
+	brass_inlay.albedo_color = Color(0.72, 0.58, 0.28)
+	brass_inlay.metallic = 0.9
+	brass_inlay.roughness = 0.28
+	var white_inlay := StandardMaterial3D.new()
+	white_inlay.albedo_color = Color(0.93, 0.91, 0.86)
+	white_inlay.roughness = 0.5
+	for side in [-1.0, 1.0]:
+		var gl := MeshInstance3D.new()
+		var gm := BoxMesh.new()
+		gm.size = Vector3(0.012, 0.0025, TABLE_LEN - 0.12)
+		gl.mesh = gm
+		gl.material_override = brass_inlay
+		var gz := (TABLE_LEN - 0.12) * 0.5 + 0.06
+		gl.position = Vector3(side * (TABLE_WID / 2.0 - 0.024),
+			surface_y_at(0.0, gz) + 0.0045, gz)
+		gl.rotation.x = board.rotation.x
+		add_child(gl)
+	var foul := MeshInstance3D.new()
+	var fm2 := BoxMesh.new()
+	fm2.size = Vector3(TABLE_WID - 0.10, 0.0025, 0.016)
+	foul.mesh = fm2
+	foul.material_override = white_inlay
+	var fz := 0.45
+	foul.position = Vector3(0.0, surface_y_at(0.0, fz) + 0.0045, fz)
+	foul.rotation.x = board.rotation.x
+	add_child(foul)
 
 	for lx in [-0.46, 0.46]:
 		for lz in [0.32, 0.95, 1.88]:
@@ -268,85 +300,124 @@ func build() -> void:
 	# ball" report. The tray gives returned balls a physical home.
 	_build_tray()
 
-	# --- Scoring pockets: the star-edged troughs (THE table fix) ---
-	_build_pockets(wood_mat)
+	# --- Scoring sockets: three brass astrolabe medallions (THE factory look) ---
+	_build_astrolabes()
+	_build_guardlines()
 const POS_GLOW := [Color(0.93, 0.75, 0.22), Color(0.82, 0.85, 0.92), Color(0.78, 0.25, 0.22)]
 const CLAIM_GLOW := {"red": Color(0.95, 0.25, 0.18), "black": Color(0.55, 0.58, 0.65)}
 
 
-func _build_pockets(_wood_mat: StandardMaterial3D) -> void:
-	## The official ASTROLABE look: 21 discrete socket pockets (7 per
-	## position), each with a dark comb separator on its edges and hooked
-	## teeth at the front lip - the classic Star Cluster Ball table.
-	## Physics stays FLAT (v3 proved Jolt box edges eat ball energy): capture
-	## is purely the speed-gated Area3D per socket. Each socket keeps its own
-	## emissive plate material so a claim recolours it to the owner's ball.
+func _brass_material() -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.72, 0.58, 0.28)
+	mat.metallic = 0.95
+	mat.roughness = 0.28
+	return mat
+
+
+## THE factory board: three brass astrolabe medallions down the centreline,
+## each a circular machine holding 7 real socket cups in a hex-flower cluster
+## (1 centre + 6 around). Capture stays the proven speed-gated Area3D; cups
+## are visual recesses that claimed balls snap into.
+func _build_astrolabes() -> void:
+	var brass := _brass_material()
 	for bi in range(POS_Z.size()):
 		var cz: float = POS_Z[bi]
-		var sy: float = surface_y_at(0.0, cz)          # felt height at band
+		var sy: float = surface_y_at(0.0, cz)
+		# Recessed dark disc - the machine's face plate.
+		var face := MeshInstance3D.new()
+		var fm := CylinderMesh.new()
+		fm.top_radius = MEDAL_R - 0.012
+		fm.bottom_radius = MEDAL_R - 0.012
+		fm.height = 0.006
+		var face_mat := StandardMaterial3D.new()
+		face_mat.albedo_color = Color(0.09, 0.09, 0.105)
+		face_mat.metallic = 0.35
+		face_mat.roughness = 0.55
+		face.mesh = fm
+		face.material_override = face_mat
+		face.position = Vector3(0.0, sy - 0.002, cz)
+		add_child(face)
+		# Brass ring frame.
+		var ring := MeshInstance3D.new()
+		var rm := TorusMesh.new()
+		rm.inner_radius = MEDAL_R - 0.016
+		rm.outer_radius = MEDAL_R
+		ring.mesh = rm
+		ring.material_override = brass
+		ring.position = Vector3(0.0, sy + 0.002, cz)
+		add_child(ring)
+		# Point value etched on the table in front of the medallion.
+		var lbl := Label3D.new()
+		lbl.text = ["1", "2", "5"][bi]
+		lbl.modulate = POS_GLOW[bi]
+		lbl.font_size = 96
+		lbl.pixel_size = 0.0006
+		lbl.outline_size = 0
+		lbl.rotation_degrees = Vector3(-84.0, 0.0, 0.0)
+		lbl.position = Vector3(0.0, sy + 0.004, cz - MEDAL_R - 0.035)
+		add_child(lbl)
 		for si in range(SLOTS_PER_POS):
-			var hx := slot_center_x(si)
+			var sp := socket_pos(bi, si)
+			# Capture area (speed-gated settle logic picks this up).
 			var area := Area3D.new()
 			var cs := CollisionShape3D.new()
-			var sb := BoxShape3D.new()
-			sb.size = Vector3(SLOT_PITCH * 0.86, 0.05, SLOT_W * 0.62)
+			var sb := SphereShape3D.new()
+			sb.radius = SOCKET_R + 0.014
 			cs.shape = sb
 			area.add_child(cs)
-			area.position = Vector3(hx, sy + 0.002, cz)
+			area.position = Vector3(sp.x, sy + 0.012, sp.z)
 			area.collision_layer = 0
 			area.collision_mask = 2
 			area.monitoring = true
 			add_child(area)
-			slots.append({"band": bi, "col": si, "area": area, "color": ""})
+			# The socket cup: dark circular recess with a brass rim.
+			var cup := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = SOCKET_R
+			cm.bottom_radius = SOCKET_R * 0.82
+			cm.height = 0.004
+			var cup_mat := StandardMaterial3D.new()
+			cup_mat.albedo_color = Color(0.05, 0.05, 0.06)
+			cup_mat.metallic = 0.5
+			cup_mat.roughness = 0.4
+			cup.mesh = cm
+			cup.material_override = cup_mat
+			cup.position = Vector3(sp.x, sy + 0.001, sp.z)
+			add_child(cup)
+			var rim := MeshInstance3D.new()
+			var tm := TorusMesh.new()
+			tm.inner_radius = SOCKET_R - 0.004
+			tm.outer_radius = SOCKET_R + 0.006
+			rim.mesh = tm
+			rim.material_override = brass
+			rim.position = Vector3(sp.x, sy + 0.003, sp.z)
+			add_child(rim)
+			slots.append({"band": bi, "col": si, "area": area, "color": "",
+				"cup": cup_mat})
 
-			# Emissive socket plate - recolours when a ball claims it.
-			var plate_mesh := MeshInstance3D.new()
-			var plate_bm := BoxMesh.new()
-			plate_bm.size = Vector3(SLOT_PITCH * 0.80, 0.01, SLOT_W * 0.55)
-			plate_mesh.mesh = plate_bm
-			var plate_mat := StandardMaterial3D.new()
-			plate_mat.albedo_color = POS_GLOW[bi] * 0.5
-			plate_mat.metallic = 0.3
-			plate_mat.roughness = 0.3
-			plate_mat.emission_enabled = true
-			plate_mat.emission = POS_GLOW[bi]
-			plate_mat.emission_energy_multiplier = 1.4
-			plate_mesh.material_override = plate_mat
-			plate_mesh.position = Vector3(hx, sy + 0.001, cz)
-			add_child(plate_mesh)
 
-			# Dark wood comb separator on each socket's left edge (the last
-			# socket also gets a right edge, so neighbouring sockets never
-			# double-draw the same wall) - the classic pocket "hooks".
-			var sep_mat := StandardMaterial3D.new()
-			sep_mat.albedo_color = Color(0.16, 0.10, 0.06)
-			sep_mat.roughness = 0.7
-			for side in [-1.0, 1.0]:
-				if side < 0.0 or si == SLOTS_PER_POS - 1:
-					var sep := MeshInstance3D.new()
-					var sm := BoxMesh.new()
-					sm.size = Vector3(0.014, 0.016, SLOT_W * 0.72)
-					sep.mesh = sm
-					sep.material_override = sep_mat
-					sep.position = Vector3(hx + side * SLOT_PITCH * 0.5,
-						sy + 0.006, cz)
-					add_child(sep)
-
-			# Hooked teeth at the pocket's front lip (visual only).
-			var tooth_mat := StandardMaterial3D.new()
-			tooth_mat.albedo_color = Color(0.52, 0.34, 0.19)
-			tooth_mat.roughness = 0.5
-			for side in [-1.0, 1.0]:
-				var tooth := MeshInstance3D.new()
-				var tbm := BoxMesh.new()
-				tbm.size = Vector3(0.045, 0.012, 0.022)
-				tooth.mesh = tbm
-				tooth.material_override = tooth_mat
-				tooth.position = Vector3(hx + side * 0.055, sy + 0.007,
-					cz - SLOT_W * 0.40)
-				tooth.rotation.y = -side * 0.85
-				add_child(tooth)
-			slots[slots.size() - 1]["plate"] = plate_mat
+## Brass guardline inlays up both edges of the playfield (the factory table's
+## etched border lines). Segmented so each piece hugs the 5-degree tilt.
+func _build_guardlines() -> void:
+	var brass := _brass_material()
+	var y_far := surface_y_at(0.0, TABLE_LEN)
+	var y_near := surface_y_at(0.0, 0.0)
+	var slope := atan2(y_far - y_near, TABLE_LEN)
+	var segs := 8
+	var seg_len := (TABLE_LEN - 0.20) / float(segs)
+	for side in [-1.0, 1.0]:
+		var x_edge: float = side * (TABLE_WID / 2.0 - 0.035)
+		for i in range(segs):
+			var z_mid := 0.10 + seg_len * (float(i) + 0.5)
+			var seg := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = Vector3(0.010, 0.0025, seg_len)
+			seg.mesh = bm
+			seg.material_override = brass
+			seg.position = Vector3(x_edge, surface_y_at(x_edge, z_mid) + 0.002, z_mid)
+			seg.rotation.x = -slope
+			add_child(seg)
 ## The player-end tray: returned balls land here and are re-racked.
 ## Floor top at y=-0.13 (the height test A's comment always assumed), walls
 ## on all open sides so a returned ball rests instead of escaping.
@@ -536,6 +607,10 @@ func _claim_socket(sd: Dictionary, b: SCBBall) -> void:
 	sd["color"] = b.color
 	_recolor_plate(sd, b.color)
 	socket_balls[_socket_key(int(sd["band"]), int(sd["col"]))] = b
+	# Snap the ball visually INTO its cup (half-sunk like a pocketed ball).
+	var sp := socket_pos(int(sd["band"]), int(sd["col"]))
+	var sy := surface_y_at(sp.x, sp.z)
+	b.position = Vector3(sp.x, sy + SCBBall.RADIUS_M * 0.55, sp.z)
 	_freeze_in_place(b)
 
 func _freeze_in_place(b: SCBBall) -> void:
@@ -546,16 +621,18 @@ func _freeze_in_place(b: SCBBall) -> void:
 	b.angular_velocity = Vector3.ZERO
 
 func _recolor_plate(sd: Dictionary, color: String) -> void:
-	var mat_v: Variant = sd.get("plate")
+	var mat_v: Variant = sd.get("cup")
 	if mat_v == null or not (mat_v is StandardMaterial3D):
 		return
 	var m := mat_v as StandardMaterial3D
 	if color == "":
-		m.emission = POS_GLOW[clampi(int(sd["band"]), 0, POS_GLOW.size() - 1)]
-		m.emission_energy_multiplier = 1.4
+		m.albedo_color = Color(0.05, 0.05, 0.06)
+		m.emission_enabled = false
 	else:
+		m.albedo_color = CLAIM_GLOW[color] * 0.55
+		m.emission_enabled = true
 		m.emission = CLAIM_GLOW[color]
-		m.emission_energy_multiplier = 2.2
+		m.emission_energy_multiplier = 0.9
 
 
 ## Track a freshly-launched ball so the settle-detector resolves it.

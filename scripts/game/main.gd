@@ -372,32 +372,50 @@ func _build_env() -> void:
 	wenv.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
 	var psky := ProceduralSkyMaterial.new()
-	psky.sky_top_color = Color(0.10, 0.11, 0.15)
-	psky.sky_horizon_color = Color(0.50, 0.44, 0.40)
-	psky.ground_bottom_color = Color(0.07, 0.07, 0.09)
-	psky.ground_horizon_color = Color(0.44, 0.38, 0.33)
+	# Broadcast-night stage: deep navy-black with a faint cool horizon glow so
+	# the lit table is the only bright thing in frame (modern show look).
+	psky.sky_top_color = Color(0.016, 0.018, 0.028)
+	psky.sky_horizon_color = Color(0.10, 0.095, 0.105)
+	psky.ground_bottom_color = Color(0.008, 0.008, 0.012)
+	psky.ground_horizon_color = Color(0.075, 0.07, 0.08)
 	sky.sky_material = psky
 	wenv.sky = sky
 	wenv.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	wenv.ambient_light_energy = 1.15
-	wenv.ambient_light_color = Color(1.0, 0.95, 0.88)
+	wenv.ambient_light_energy = 1.0
+	wenv.ambient_light_color = Color(0.92, 0.95, 1.0)
 	env_n.environment = wenv
 	add_child(env_n)
 	wenv.tonemap_mode = Environment.TONE_MAPPER_ACES
+	wenv.tonemap_white = 6.0
 	wenv.glow_enabled = true
-	wenv.glow_intensity = 0.30
-	wenv.glow_bloom = 0.08
-	wenv.glow_hdr_threshold = 0.9
+	wenv.glow_intensity = 0.55
+	wenv.glow_bloom = 0.12
+	wenv.glow_hdr_threshold = 0.85
+	# Light colour grade: a touch more contrast + saturation reads "modern
+	# broadcast" instantly on mobile OLEDs.
+	wenv.adjustment_enabled = true
+	wenv.adjustment_contrast = 1.06
+	wenv.adjustment_saturation = 1.12
 	var floor := MeshInstance3D.new()
 	var fm := PlaneMesh.new()
 	fm.size = Vector2(14.0, 14.0)
 	floor.mesh = fm
 	var fmat := StandardMaterial3D.new()
 	fmat.albedo_color = Color(0.020, 0.022, 0.026)
-	fmat.roughness = 0.98
+	# Polished stage floor: picks up the table lights as soft reflections.
+	fmat.roughness = 0.45
+	fmat.metallic = 0.2
 	floor.material_override = fmat
 	floor.position = Vector3(0.0, -0.21, 1.0)
 	add_child(floor)
+	# One static reflection probe over the table - this is what makes the
+	# marble, brass and lacquered balls look expensive.
+	var probe := ReflectionProbe.new()
+	probe.position = Vector3(0.0, 0.7, 1.2)
+	probe.size = Vector3(4.0, 2.2, 6.0)
+	probe.update_mode = ReflectionProbe.UPDATE_ONCE
+	probe.intensity = 0.8
+	add_child(probe)
 
 
 func _build_lights() -> void:
@@ -405,14 +423,14 @@ func _build_lights() -> void:
 	sun.name = "KeyLight"
 	sun.shadow_enabled = true
 	sun.light_color = Color(1.0, 0.96, 0.86)
-	sun.light_energy = 2.1
+	sun.light_energy = 2.4
 	sun.rotation_degrees = Vector3(-58.0, 24.0, 0.0)
 	add_child(sun)
 	var fill := OmniLight3D.new()
 	fill.name = "FillLight"
 	fill.position = Vector3(1.25, 0.7, -0.55)
 	fill.light_color = Color(0.78, 0.84, 1.0)
-	fill.light_energy = 0.55
+	fill.light_energy = 0.7
 	fill.omni_range = 6.0
 	add_child(fill)
 	var rim := OmniLight3D.new()
