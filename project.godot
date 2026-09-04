@@ -21,6 +21,7 @@ config/icon="res://icon.svg"
 Game="*res://scripts/core/game_state.gd"
 Rules="*res://scripts/core/rules_engine.gd"
 Settings="*res://scripts/core/settings.gd"
+Sfx="*res://scripts/core/sfx.gd"
 
 [display]
 

@@ -77,19 +77,36 @@ func _unhandled_input(event: InputEvent) -> void:
 	var on_mobile := OS.has_feature("mobile")
 	if on_mobile and event is InputEventScreenTouch:
 		if event.pressed and not aiming and active_ball != null:
-			_start_aim(event.position)
+			if _near_ball(event.position):
+				_start_aim(event.position)
+			else:
+				_repositioning = true
+				_slide_marker(event.position)
 		elif aiming and not event.pressed:
 			_release_shot(event.position)
+		elif _repositioning and not event.pressed:
+			_repositioning = false
 	elif on_mobile and event is InputEventScreenDrag:
 		if aiming:
 			_update_guide(event.position)
+		elif _repositioning:
+			_slide_marker(event.position)
 	elif not on_mobile and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed and not aiming and active_ball != null:
-			_start_aim(event.position)
+			if _near_ball(event.position):
+				_start_aim(event.position)
+			else:
+				_repositioning = true
+				_slide_marker(event.position)
 		elif aiming:
 			_release_shot(event.position)
-	elif not on_mobile and event is InputEventMouseMotion and aiming:
-		_update_guide(event.position)
+		elif _repositioning:
+			_repositioning = false
+	elif not on_mobile and event is InputEventMouseMotion:
+		if aiming:
+			_update_guide(event.position)
+		elif _repositioning:
+			_slide_marker(event.position)
 
 
 func _start_aim(pos: Vector2) -> void:
@@ -155,6 +172,47 @@ func _update_guide(screen_pos: Vector2) -> void:
 	_draw_trajectory(active_ball.position, angle, power)
 
 
+# ------------------------------------------------- slide-to-reposition (v6) --
+## 2026-09 live feedback: players could not move the ball left/right before
+## shooting. Now a touch-drag that starts OFF the ball slides the served
+## marker along the launch line; a touch ON the ball starts the slingshot aim.
+var _repositioning := false
+const _BALL_GRAB_PX := 150.0
+
+
+## Slide-to-aim (live feedback): touching the felt instead of the ball slides
+## the serve marker left/right along the launch line, so the player sets the
+## shot origin before pulling back. Clamped to the felt width (±0.52).
+func _slide_marker(screen_pos: Vector2) -> void:
+	if active_ball == null or not is_instance_valid(active_ball) or cam == null:
+		return
+	var pl := Plane(Vector3.UP, active_ball.position)
+	var hit = pl.intersects_ray(cam.project_ray_origin(screen_pos),
+		cam.project_ray_normal(screen_pos))
+	if hit != null:
+		var p: Vector3 = hit
+		var nx := clampf(p.x, -0.52, 0.52)
+		active_ball.position = Vector3(nx,
+			world.ball_rest_y(nx, world.LAUNCH_Z), world.LAUNCH_Z)
+		print("SCB slide marker x=%.2f" % nx)
+
+
+func _near_ball(screen_pos: Vector2) -> bool:
+	if active_ball == null or cam == null:
+		return false
+	if not is_instance_valid(active_ball):
+		return false
+	return screen_pos.distance_to(cam.unproject_position(active_ball.position)) <= _BALL_GRAB_PX
+
+
+## Safe sound hook: the Sfx autoload is absent in headless test runs, so every
+## caller goes through this guard instead of dereferencing /root/Sfx directly.
+func _sfx(name: String, pitch := 1.0) -> void:
+	var snd := get_node_or_null("/root/Sfx")
+	if snd != null:
+		snd.play(name, pitch)
+
+
 func _draw_trajectory(start: Vector3, angle: float, power: float) -> void:
 	for child in guide_node.get_children():
 		child.queue_free()
@@ -214,6 +272,7 @@ func _on_ball_scored(ball: SCBBall, band: int, keep_shooting: bool) -> void:
 	print("SCB SCORED color=%s band=%d pts=%d keep=%s" % [
 		ball.color, band, pts, keep_shooting])
 	scores[ball.color] = int(scores[ball.color]) + pts
+	_sfx("score")
 	_update_hud()
 	_score_juice(ball.position, pts)
 	pending_resolve = false
@@ -228,6 +287,7 @@ func _on_ball_scored(ball: SCBBall, band: int, keep_shooting: bool) -> void:
 ## Official grouping: a grouped ball was knocked back to its owner's rack.
 func _on_ball_displaced(ball: SCBBall) -> void:
 	print("SCB DISPLACED color=%s" % ball.color)
+	_sfx("pop", 1.2)
 	hand_counts[ball.color] = int(hand_counts[ball.color]) + 1
 	_update_hud()
 
@@ -237,6 +297,7 @@ func _on_ball_displaced(ball: SCBBall) -> void:
 func _on_ball_grouped(ball: SCBBall) -> void:
 	print("SCB GROUPED color=%s" % ball.color)
 	_msg("%s ball walls a pocket - turn passes" % _color_name(ball.color))
+	_sfx("block")
 	pending_resolve = false
 	_pass_turn()
 
@@ -244,6 +305,7 @@ func _on_ball_grouped(ball: SCBBall) -> void:
 func _on_ball_guttered(_ball: SCBBall) -> void:
 	print("SCB GUTTERED")
 	_msg("%s lost the ball down the gutter" % _color_name(active_color))
+	_sfx("gutter")
 	_gutter_juice()
 	pending_resolve = false
 	_pass_turn()
@@ -254,6 +316,7 @@ func _on_ball_returned(ball: SCBBall) -> void:
 	## Real-sport rule: the ball rolls back into the tray and is handed back
 	## to the shooter, so the turn is NOT spent.
 	world.reinsert_hand_ball(ball)
+	_sfx("thud", 0.9)
 	hand_counts[ball.color] = int(hand_counts[ball.color]) + 1
 	pending_resolve = false
 	_msg("%s ball back in hand" % _color_name(ball.color))
@@ -482,6 +545,19 @@ func _build_hud() -> void:
 	hud_root = Control.new()
 	hud_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	hud_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Safe-area insets (live feedback: the top-left score pill was cut off by
+	# the camera notch on a 1080x2400 device). Physical safe-area pixels are
+	# converted into the stretched HUD coordinate space; a 28 design-px floor
+	# guards devices that report no cutout insets.
+	var sa := DisplayServer.get_display_safe_area()
+	var win := DisplayServer.window_get_size()
+	var vp_size := hud_root.get_viewport_rect().size
+	var kx := vp_size.x / maxf(float(win.x), 1.0)
+	var ky := vp_size.y / maxf(float(win.y), 1.0)
+	hud_root.offset_left = float(sa.position.x) * kx
+	hud_root.offset_top = maxf(float(sa.position.y) * ky, 28.0)
+	hud_root.offset_right = -float(win.x - sa.end.x) * kx
+	hud_root.offset_bottom = -float(win.y - sa.end.y) * ky
 	hud.add_child(hud_root)
 
 	var pill := StyleBoxFlat.new()

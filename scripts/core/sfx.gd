@@ -1,4 +1,3 @@
-class_name Sfx
 extends Node
 ## Zero-asset sound effects: tiny PCM synths baked once at runtime into
 ## AudioStreamWav clips and played through one polyphonic stream. Keeps the
@@ -24,18 +23,18 @@ func play(name: String, pitch := 1.0, vol_db := 0.0) -> void:
 		return
 	if not _player.playing:
 		_player.play()
-	var stream: AudioStreamWav = _cache.get(name)
+	var stream: AudioStreamWAV = _cache.get(name)
 	if stream == null:
 		stream = _synth(name)
 		_cache[name] = stream
 	if stream == null:
 		return
-	var pb := _player.get_stream_playback() as AudioStreamPolyphonicPlayback
+	var pb := _player.get_stream_playback() as AudioStreamPlaybackPolyphonic
 	if pb != null:
 		pb.play_stream(stream, 0.0, vol_db, pitch)
 
 
-func _synth(name: String) -> AudioStreamWav:
+func _synth(name: String) -> AudioStreamWAV:
 	var n := 0
 	match name:
 		"whoosh": n = int(RATE * 0.28)
@@ -70,8 +69,8 @@ func _synth(name: String) -> AudioStreamWav:
 	bytes.resize(n * 2)
 	for i in n:
 		bytes.encode_s16(i * 2, int(samples[i] * 32000.0))
-	var wav := AudioStreamWav.new()
-	wav.format = AudioStreamWav.FORMAT_16_BITS
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
 	wav.mix_rate = RATE
 	wav.stereo = false
 	wav.data = bytes

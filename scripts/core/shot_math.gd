@@ -10,15 +10,18 @@ extends RefCounted
 ## Effective up-slope deceleration (verified: 2.0 m/s stops near z=1.7).
 const DECEL := 0.85
 const PLAY_LINE_Z := 0.35
-const FAR_GUTTER_Z := 2.02
 
-## Slot band center Z (closest..furthest), matching the world geometry.
-const SLOT_Z := [0.62, 1.10, 1.58]
+## Slot band center Z (closest..furthest) - the REAL astrolabe medallion
+## centres from table_world.POS_Z (v5 factory layout). The old values
+## [0.62, 1.10, 1.58] were stale v3 lane geometry and pointed the landing
+## marker at bare felt.
+const SLOT_Z := [0.75, 1.45, 2.15]
 ## Slot capture half-depth (z): a ball stopping within +/- of center is caught.
-const SLOT_HALF_DEPTH := 0.12
+const SLOT_HALF_DEPTH := 0.10
 
 ## Max reasonable shot power before the ball definitely gutters.
 const GUTTER_POWER := 3.4
+const FAR_GUTTER_Z := 2.38
 
 
 static func stop_distance(power: float) -> float:

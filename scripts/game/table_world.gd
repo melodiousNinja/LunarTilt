@@ -56,6 +56,14 @@ const RACK_PITCH := 0.048          # (60 mm ball + 12 mm gap)
 const SLOT_CAPTURE_SPEED := 0.35
 ## Physics frames a ball must linger near-rest before the pocket claims it.
 const SETTLE_FRAMES := 3
+## True-rest thresholds (2026-09 live feedback): a ball decelerating up the
+## slope hovers near zero speed at its arc apex for ~0.8 s; the old blanket
+## "slow for 3 frames = settled" resolved it MID-FLIGHT, which is why balls
+## vanished and never rolled back. Now only decisive zones (socket / tray /
+## gutter) settle in SETTLE_FRAMES; the open felt demands TRUE rest so the
+## full up-and-back path plays out and stopped balls persist as obstacles.
+const FELT_REST_SPEED := 0.06
+const FELT_SETTLE_FRAMES := 24
 
 var board: StaticBody3D
 var slots: Array = []        # [{ band:int, area:Area3D, color:String }]
@@ -124,8 +132,12 @@ static func socket_pos(bi: int, si: int) -> Vector3:
 ## 8 corners of the visual frame we care about (racks + tray + table + gutter).
 static func frame_points() -> Array:
 	var pts: Array = []
-	for x in [-0.92, 0.92]:
-		for z in [-0.24, 3.0]:
+	# v6 (2026-09 live feedback "table is so small"): frame the BOARD, not the
+	# board + side racks. The racks sit on the rail tops off the play area;
+	# including them ate ~40% of the portrait width. x half-extent is now the
+	# playable width + rails (0.60 + 0.10), z spans tray to past the far rail.
+	for x in [-0.70, 0.70]:
+		for z in [-0.26, 2.55]:
 			for y in [-0.06, 0.16]:
 				pts.append(Vector3(x, y, z))
 	return pts
@@ -483,15 +495,23 @@ func _physics_process(_delta: float) -> void:
 			_resolve_ball(t)
 			continue
 		var spd := bb.linear_velocity.length()
-		if spd > SLOT_CAPTURE_SPEED:
-			t["frames"] = 0
-		else:
-			t["frames"] = int(t["frames"]) + 1
-			if int(t["frames"]) >= SETTLE_FRAMES:
-				_resolve_ball(t)
-				continue
 		if spd > (0.03):
 			_any_moving = true
+		# Zone-aware settle (see FELT_REST_SPEED above): decisive zones settle
+		# fast; open felt requires true rest so roll-backs finish their arc.
+		if spd > FELT_REST_SPEED:
+			t["frames"] = 0
+			still.append(t)
+			continue
+		t["frames"] = int(t["frames"]) + 1
+		var need := SETTLE_FRAMES
+		if _socket_overlapping(bb).is_empty() \
+				and not (_tray_zone != null and _tray_zone.overlaps_body(b)) \
+				and not (gutter != null and gutter.overlaps_body(b)):
+			need = FELT_SETTLE_FRAMES
+		if int(t["frames"]) >= need:
+			_resolve_ball(t)
+			continue
 		still.append(t)
 	_tracked = still
 
@@ -555,8 +575,20 @@ func _resolve_ball(t: Dictionary) -> void:
 		_claim_socket(sd, bb)
 		ball_scored.emit(bb, int(sd["band"]), bool(dec["keep_shooting"]))
 		return
-	reinsert_hand_ball(bb)
-	ball_returned.emit(bb)
+	# Open felt: the ball STAYS on the table as a live obstacle (2026-09 live
+	# feedback: resolving it back to the rack made balls vanish mid-board and
+	# left the table empty - players expect the full up-and-back path to
+	# persist and later shots to clash with resting balls).
+	_freeze_in_place(bb)
+	ball_grouped.emit(bb)  # main plays the block sound (single SFX source)
+
+
+## Safe sound hook: the Sfx autoload is absent in headless test runs, so
+## resolve it lazily instead of by global identifier (keeps tests parseable).
+func _sfx(name: String, pitch := 1.0, vol_db := 0.0) -> void:
+	var snd := get_node_or_null("/root/Sfx")
+	if snd != null:
+		snd.play(name, pitch, vol_db)
 
 
 ## ---- official socket ownership / grouping helpers (2026-09 rules pass) ----
@@ -615,10 +647,14 @@ func _claim_socket(sd: Dictionary, b: SCBBall) -> void:
 
 func _freeze_in_place(b: SCBBall) -> void:
 	b.freeze = true
-	b.collision_layer = 0
-	b.collision_mask = 0
 	b.linear_velocity = Vector3.ZERO
 	b.angular_velocity = Vector3.ZERO
+	# KEEP collision layers (2026-09 live feedback: frozen balls were ghosts -
+	# live shots flew straight through every claimed ball). A frozen body is
+	# static; layer 2 / mask 3 keeps it a solid, hittable obstacle so later
+	# shots clack into it, knock it around, and the board reads as a real game.
+	b.collision_layer = 2
+	b.collision_mask = 3
 
 func _recolor_plate(sd: Dictionary, color: String) -> void:
 	var mat_v: Variant = sd.get("cup")
@@ -691,6 +727,11 @@ func reinsert_hand_ball(b: SCBBall) -> void:
 	b.rotation = Vector3.ZERO
 
 
+## Serve lane alternation (2026-09 live feedback / duel feel): each serve
+## flips side, so the player shoots from the bottom-left lane, then the
+## bottom-right, alternating like the real sport's lane rule.
+var serve_side := 1.0
+
 ## Serves an in-hand ball as a FROZEN MARKER at the launch point.
 ## LIVE-PROVEN (2026-09 device telemetry + headless bisect): a LIVE ball at
 ## the launch spot creeps back down the 5-degree slope while the player aims,
@@ -709,10 +750,12 @@ func take_hand_ball(color: String) -> SCBBall:
 	b.collision_layer = 0
 	b.collision_mask = 0
 	# TRANSFORM BEFORE add_child (Jolt must register it at the launch spot).
-	b.position = Vector3(0.0, ball_rest_y(0.0, LAUNCH_Z), LAUNCH_Z)
+	serve_side = -serve_side
+	var sx := 0.40 * serve_side
+	b.position = Vector3(sx, ball_rest_y(sx, LAUNCH_Z), LAUNCH_Z)
 	b.rotation = Vector3.ZERO
 	add_child(b)
-	print("SCB serve %s marker at %s" % [color, b.position])
+	print("SCB serve %s marker side=%.1f at %s" % [color, serve_side, b.position])
 	return b
 
 
@@ -724,8 +767,9 @@ func launch_hand_ball(marker: SCBBall, velocity: Vector3) -> SCBBall:
 	if marker == null or not is_instance_valid(marker):
 		return null
 	var pos: Vector3 = marker.position
+	var ball_color: String = marker.color
 	marker.queue_free()
-	var b := SCBBall.create(marker.color)
+	var b := SCBBall.create(ball_color)
 	b.position = pos
 	add_child(b)
 	b.linear_velocity = velocity

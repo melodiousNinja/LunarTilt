@@ -8,7 +8,7 @@ extends RigidBody3D
 ## decelerates them up the 4.99-degree slope, and static friction
 ## (0.49 >> tan(4.99 deg) ~ 0.087) holds resting balls in place.
 
-const RADIUS_M := 0.030
+const RADIUS_M := 0.034
 const MASS_KG := 0.005  # factory spec: 5 g chrome-steel ball
 const ROLL_DAMP := 0.05  # smooth phenolic roll; resistance comes from the
 # 5-degree slope's gravity component, not artificial braking
@@ -32,7 +32,29 @@ func _ready() -> void:
 	# IMPORTANT: never rebuild physics properties after the body is inside the
 	# physics space (Jolt re-registers the body, and if it is a hair's width
 	# inside the board it tunnels straight through).
-	pass
+	# 8-ball-style contact audio (2026-09 live feedback: balls made no sound
+	# and no contact feel). contact_monitor is already on; this translates
+	# each reported contact into a synthesized clack, volume- and pitch-
+	# scaled by impact speed, rate-limited so rolling chains don't machine-gun.
+	body_entered.connect(_on_body_entered)
+
+
+var _last_clack_ms := 0
+
+func _on_body_entered(_body: Node) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_clack_ms < 70:
+		return
+	_last_clack_ms = now
+	var impact := linear_velocity.length()
+	if impact < 0.25:
+		return
+	var snd := get_node_or_null("/root/Sfx")
+	if snd == null:
+		return
+	var vol: float = clampf(-20.0 + impact * 7.0, -20.0, -1.0)
+	var pitch: float = clampf(0.85 + impact * 0.09, 0.85, 1.5)
+	snd.play("pop", pitch, vol)
 
 
 func _process(_delta: float) -> void:
