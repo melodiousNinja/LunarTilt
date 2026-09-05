@@ -483,6 +483,23 @@ func _build_tray() -> void:
 	_tray_zone.collision_mask = 2
 	_tray_zone.monitoring = true
 	add_child(_tray_zone)
+	# Deep GUTTER (official rule: a ball that overshoots the last astrolabe is
+	# lost). SESSION-PROVEN (2026-09-05, 29-shot live session): balls reached
+	# z=3.09 past the far rail but the gutter was never built (the var stayed
+	# null) so zero shots ever guttered - they all came back as returned.
+	# Full-width catch volume: z 2.50..3.45, y -0.40..+0.32 (catches rolling
+	# AND flying balls that clear the deep end).
+	gutter = Area3D.new()
+	var gs := CollisionShape3D.new()
+	var gb := BoxShape3D.new()
+	gb.size = Vector3(1.34, 0.72, 0.95)
+	gs.shape = gb
+	gutter.add_child(gs)
+	gutter.position = Vector3(0.0, -0.04, 2.975)
+	gutter.collision_layer = 0
+	gutter.collision_mask = 2
+	gutter.monitoring = true
+	add_child(gutter)
 
 
 func _physics_process(_delta: float) -> void:
@@ -496,6 +513,12 @@ func _physics_process(_delta: float) -> void:
 			continue
 		var bb := b as SCBBall
 		if bb.freeze:
+			continue
+		# Deep-zone rule: anything past the last astrolabe (z > 2.5) is in the
+		# gutter - resolve IMMEDIATELY so overpowered shots are claimed as
+		# lost, not returned (the gutter area overlap in _resolve_ball rates it).
+		if bb.position.z > 2.5:
+			_resolve_ball(t)
 			continue
 		# Out-of-world guard: a ball that escaped the board (tunneled, knocked
 		# over a rail) resolves INSTANTLY as a returned ball instead of hanging
