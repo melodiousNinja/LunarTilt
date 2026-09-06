@@ -23,6 +23,12 @@ const SLOT_HALF_DEPTH := 0.10
 const GUTTER_POWER := 3.4
 const FAR_GUTTER_Z := 2.38
 
+## Vertical fraction of launch power for the factory-spec parabolic toss onto
+## the raised star plates. SINGLE SOURCE OF TRUTH: main._release_shot, the
+## tuning sweep (tests/sweep_hop.gd) and the physics battery all launch with
+## this, so the analytic preview, the live game and the tests never drift.
+const HOP_K := 0.62
+
 
 static func stop_distance(power: float) -> float:
 	return (power * power) / (2.0 * DECEL)

@@ -26,29 +26,53 @@ func _run() -> void:
 	for i in 30:
 		await physics_frame
 
-	# --- A. no tunneling: a ball pushed up-slope never drops below the board ---
+	# --- A. FACTORY POWER CURVE (empirical, tests/sweep_hop.gd 2026-09) ---
+	# Launch mirrors main._release_shot: horizontal power + HOP_K vertical
+	# fraction. Factory geometry gives the real sport's difficulty curve:
+	#   soft toss 2.0 -> dies against Venus's raised face, rolls back (miss)
+	#   firm toss 3.8 -> clears Venus, is CAPTURED in a Mars well (2-pt zone)
+	var min_expected := -0.165
 	var ball := SCBBall.create("red")
 	root.add_child(ball)
 	var start_z := 0.35
 	ball.position = Vector3(0.0, world.ball_rest_y(0.0, start_z), start_z)
-	ball.linear_velocity = Vector3(0.0, 0.0, 2.0)
+	ball.linear_velocity = Vector3(0.0, 2.0 * ShotMath.HOP_K, 2.0)
 	ball.angular_velocity = Vector3.ZERO
 	world.track_live(ball)
 	var min_y := ball.position.y
 	var max_z := ball.position.z
-	# Tray floor top (-0.13) minus ball radius (0.030) minus a small margin; a
-	# ball center below this means it tunnelled through the tray floor.
-	var min_expected := -0.165
 	for i in 420:
 		await physics_frame
 		min_y = minf(min_y, ball.position.y)
 		max_z = maxf(max_z, ball.position.z)
-	print("SHOT peak_z=%.3f min_y=%.4f expected_min_y=%.4f speed=%.3f" % [
-		max_z, min_y, min_expected, ball.linear_velocity.length()])
+	print("SHOT soft peak_z=%.3f min_y=%.4f" % [max_z, min_y])
 	_expect(min_y >= min_expected, "ball never tunnels below the board (min_y %.3f)" % min_y)
-	_expect(max_z >= 1.4, "2.0 m/s shot reaches deep zone (peak z >= 1.4, got %.2f)" % max_z)
+	_expect(max_z < 1.2,
+		"soft toss is blocked by the raised Venus plate (peak z %.2f < 1.2)" % max_z)
 	_expect(max_z <= 2.9, "shot never clears the far rail (peak z <= 2.9)")
+	_expect(ball.freeze, "soft toss resolves (rolled back and was re-racked)")
 	ball.queue_free()
+	for i in 5:
+		await physics_frame
+
+	# Firm toss: must clear Venus and be caught by a Mars well.
+	var firm := SCBBall.create("red")
+	root.add_child(firm)
+	firm.position = Vector3(0.0, world.ball_rest_y(0.0, start_z), start_z)
+	firm.linear_velocity = Vector3(0.0, 3.8 * ShotMath.HOP_K, 3.8)
+	firm.angular_velocity = Vector3.ZERO
+	world.track_live(firm)
+	var firm_peak := firm.position.z
+	for i in 420:
+		await physics_frame
+		firm_peak = maxf(firm_peak, firm.position.z)
+	print("SHOT firm peak_z=%.3f end=%s frozen=%s" % [
+		firm_peak, firm.position, firm.freeze])
+	_expect(firm_peak >= 1.4,
+		"firm toss reaches the Mars zone (peak z %.2f >= 1.4)" % firm_peak)
+	_expect(firm.freeze and firm.position.z > 1.2 and firm.position.z < 1.8,
+		"firm toss is captured in a Mars well (z %.2f)" % firm.position.z)
+	firm.queue_free()
 	for i in 5:
 		await physics_frame
 

@@ -39,6 +39,12 @@ const POS_Z := [0.75, 1.45, 2.15]     # astrolabe medallion centres (near..far)
 const MEDAL_R := 0.155                # brass ring radius of one medallion
 const CLUSTER_R := 0.096              # hex-flower ring radius (socket centres)
 const SOCKET_R := 0.037               # socket cup radius (ball r=0.030 - the cup must be BIGGER so the ball sits visibly in the groove)
+## v11 factory spec: the three scoring plates are RAISED hardware (the real
+## YoTyan table's star plates stand proud of the marble). Launched balls
+## deflect off the plate edge - a real collider, not a fake force - and slow
+## balls that settle on the plate drop into the wells sunk into its top.
+const PLATE_H := 0.010
+const PLATE_NAMES := ["VENUS", "MARS", "JUPITER"]
 const POCKET_X_HALF := 0.60             # playable half-width the bands span
 const PLAY_LINE_Z := 0.35
 const LAUNCH_Z := 0.22                # ball spawn behind the play line
@@ -335,39 +341,68 @@ func _brass_material() -> StandardMaterial3D:
 	return mat
 
 
-## THE factory board: three brass astrolabe medallions down the centreline,
-## each a circular machine holding 7 real socket cups in a hex-flower cluster
-## (1 centre + 6 around). Capture stays the proven speed-gated Area3D; cups
-## are visual recesses that claimed balls snap into.
+## THE factory board (v11): three RAISED star plates down the centreline -
+## VENUS (1pt), MARS (2pt), JUPITER (5pt) - each a physical platform standing
+## PLATE_H proud of the marble, holding 7 real wells sunk into its top in a
+## hex-flower cluster. A launched ball that hits the plate wall DEFLECTS
+## (convex collider); a ball that lands on the plate and settles near a well
+## drops in and is caught. The old flush cups read as painted bowls a ball
+## rolled straight over - the factory plates are raised, and that height is
+## the deflection gameplay the user called out.
 func _build_astrolabes() -> void:
 	var brass := _brass_material()
+	var plate_mat := StandardMaterial3D.new()
+	plate_mat.albedo_color = Color(0.16, 0.17, 0.19)   # gunmetal hardware
+	plate_mat.metallic = 0.75
+	plate_mat.roughness = 0.32
 	for bi in range(POS_Z.size()):
 		var cz: float = POS_Z[bi]
 		var sy: float = surface_y_at(0.0, cz)
-		# Recessed dark disc - the machine's face plate.
-		var face := MeshInstance3D.new()
-		var fm := CylinderMesh.new()
-		fm.top_radius = MEDAL_R - 0.012
-		fm.bottom_radius = MEDAL_R - 0.012
-		fm.height = 0.006
-		var face_mat := StandardMaterial3D.new()
-		face_mat.albedo_color = Color(0.09, 0.09, 0.105)
-		face_mat.metallic = 0.35
-		face_mat.roughness = 0.55
-		face.mesh = fm
-		face.material_override = face_mat
-		face.position = Vector3(0.0, sy - 0.002, cz)
-		add_child(face)
-		# Brass ring frame.
+		var top_y: float = sy + PLATE_H
+		# --- raised plate: REAL physics body (edge deflection is free) ---
+		var pb := StaticBody3D.new()
+		var pcs := CollisionShape3D.new()
+		var pshape := CylinderShape3D.new()
+		pshape.radius = MEDAL_R
+		pshape.height = 0.05    # dug 40 mm into the board, 10 mm proud
+		pcs.shape = pshape
+		pb.add_child(pcs)
+		pb.position = Vector3(0.0, top_y - 0.025, cz)
+		pb.collision_layer = 1
+		pb.collision_mask = 2
+		add_child(pb)
+		var pv := MeshInstance3D.new()
+		var pm := CylinderMesh.new()
+		pm.top_radius = MEDAL_R
+		pm.bottom_radius = MEDAL_R
+		pm.height = 0.05
+		pv.mesh = pm
+		pv.material_override = plate_mat
+		pv.position = pb.position
+		add_child(pv)
+		# Ten star-point flares radiating from the rim (visual; physics stays
+		# the clean cylinder so deflection stays predictable).
+		for k in range(10):
+			var ang := TAU * float(k) / 10.0
+			var fl := MeshInstance3D.new()
+			var fbm2 := BoxMesh.new()
+			fbm2.size = Vector3(0.022, 0.004, 0.016)
+			fl.mesh = fbm2
+			fl.material_override = plate_mat
+			fl.position = Vector3(cos(ang) * (MEDAL_R + 0.010), top_y - 0.002,
+				cz + sin(ang) * (MEDAL_R + 0.010))
+			fl.rotation.y = -ang
+			add_child(fl)
+		# Brass ring trim flush with the plate top edge.
 		var ring := MeshInstance3D.new()
 		var rm := TorusMesh.new()
-		rm.inner_radius = MEDAL_R - 0.016
-		rm.outer_radius = MEDAL_R
+		rm.inner_radius = MEDAL_R - 0.006
+		rm.outer_radius = MEDAL_R + 0.002
 		ring.mesh = rm
 		ring.material_override = brass
-		ring.position = Vector3(0.0, sy + 0.002, cz)
+		ring.position = Vector3(0.0, top_y - 0.001, cz)
 		add_child(ring)
-		# Point value etched on the table in front of the medallion.
+		# Point value etched on the marble in front of the plate.
 		var lbl := Label3D.new()
 		lbl.text = ["1", "2", "5"][bi]
 		lbl.modulate = POS_GLOW[bi]
@@ -377,6 +412,16 @@ func _build_astrolabes() -> void:
 		lbl.rotation_degrees = Vector3(-84.0, 0.0, 0.0)
 		lbl.position = Vector3(0.0, sy + 0.004, cz - MEDAL_R - 0.035)
 		add_child(lbl)
+		# Planet name etched on the marble beyond the plate.
+		var name_lbl := Label3D.new()
+		name_lbl.text = PLATE_NAMES[bi]
+		name_lbl.modulate = POS_GLOW[bi] * 0.85
+		name_lbl.font_size = 64
+		name_lbl.pixel_size = 0.0006
+		name_lbl.outline_size = 0
+		name_lbl.rotation_degrees = Vector3(-84.0, 0.0, 0.0)
+		name_lbl.position = Vector3(0.0, sy + 0.004, cz + MEDAL_R + 0.040)
+		add_child(name_lbl)
 		for si in range(SLOTS_PER_POS):
 			var sp := socket_pos(bi, si)
 			# Capture area (speed-gated settle logic picks this up).
@@ -386,13 +431,14 @@ func _build_astrolabes() -> void:
 			sb.radius = SOCKET_R + 0.014
 			cs.shape = sb
 			area.add_child(cs)
-			area.position = Vector3(sp.x, sy + 0.012, sp.z)
+			area.position = Vector3(sp.x, top_y + 0.012, sp.z)
 			area.collision_layer = 0
 			area.collision_mask = 2
 			area.monitoring = true
 			add_child(area)
-			# The socket cup: a REAL recessed groove - dark bowl sunk below the
-			# marble with a brass rim, so a captured ball visibly sits IN it.
+			# The well: a REAL groove sunk INTO the plate top (not proud of
+			# it) with a brass rim flush with the plate surface, so a caught
+			# ball visibly sits IN the hardware.
 			var cup := MeshInstance3D.new()
 			var cm := CylinderMesh.new()
 			cm.top_radius = SOCKET_R
@@ -404,7 +450,7 @@ func _build_astrolabes() -> void:
 			cup_mat.roughness = 0.4
 			cup.mesh = cm
 			cup.material_override = cup_mat
-			cup.position = Vector3(sp.x, sy - 0.007, sp.z)  # top 2 mm BELOW marble = a true recess
+			cup.position = Vector3(sp.x, top_y - 0.007, sp.z)  # top 2 mm below plate top
 			add_child(cup)
 			var rim := MeshInstance3D.new()
 			var tm := TorusMesh.new()
@@ -412,8 +458,29 @@ func _build_astrolabes() -> void:
 			tm.outer_radius = SOCKET_R + 0.006
 			rim.mesh = tm
 			rim.material_override = brass
-			rim.position = Vector3(sp.x, sy - 0.0045, sp.z)  # torus top flush with the marble (inlaid ring, no proud lip)
+			rim.position = Vector3(sp.x, top_y - 0.0045, sp.z)  # flush with plate top
 			add_child(rim)
+			# The catch ring: 8 REAL wall segments standing PROUD of the plate
+			# top around the well mouth (the factory socket's moulded lip). A
+			# ball that rolls into the ring is TRAPPED by geometry - it cannot
+			# roll back out - and the funnel parks it in the cup to be scored.
+			# A ball that clips the ring DEFLECTS: the raised lips are actual
+			# obstacles, exactly as on the hardware (2026-09 user feedback).
+			var ring_body := StaticBody3D.new()
+			ring_body.collision_layer = 1
+			ring_body.collision_mask = 2
+			var wr := SOCKET_R + 0.005
+			for k in range(8):
+				var wang := TAU * float(k) / 8.0
+				var wcs := CollisionShape3D.new()
+				var wbox := BoxShape3D.new()
+				wbox.size = Vector3(0.034, 0.014, 0.008)
+				wcs.shape = wbox
+				wcs.position = Vector3(cos(wang) * wr, 0.007, sin(wang) * wr)
+				wcs.rotation.y = -wang
+				ring_body.add_child(wcs)
+			ring_body.position = Vector3(sp.x, top_y, sp.z)
+			add_child(ring_body)
 			slots.append({"band": bi, "col": si, "area": area, "color": "",
 				"cup": cup_mat})
 
@@ -492,14 +559,59 @@ func _build_tray() -> void:
 	gutter = Area3D.new()
 	var gs := CollisionShape3D.new()
 	var gb := BoxShape3D.new()
-	gb.size = Vector3(1.34, 0.72, 0.95)
+	# Tall catch volume: overpowered balls cross the gutter line while still
+	# AIRBORNE (sweep: y up to 0.66) - the volume must reach up to ~0.85 so
+	# the claim fires wherever the ball dies in the channel.
+	gb.size = Vector3(1.34, 1.30, 0.95)
 	gs.shape = gb
 	gutter.add_child(gs)
-	gutter.position = Vector3(0.0, -0.04, 2.975)
+	gutter.position = Vector3(0.0, 0.20, 2.975)
 	gutter.collision_layer = 0
 	gutter.collision_mask = 2
 	gutter.monitoring = true
 	add_child(gutter)
+	# Physical trench under the gutter volume: floor + back wall + side walls.
+	# Without a floor, a ball that flew past Jupiter void-fell below the world
+	# (y < -0.5) where the escape guard mis-rated it as a RETURNED ball. With
+	# the trench, it visibly lands in the channel and is claimed as guttered.
+	var trench := [
+		{"size": Vector3(1.34, 0.04, 1.10), "pos": Vector3(0.0, -0.12, 2.95)},
+		# Tall backstop + high side walls: overpowered balls (sweep p=6.4)
+		# crossed the old 0.18 m wall AIRBORNE (y up to 0.66) and escaped past
+		# the world, where the escape guard mis-rated them as returned. The
+		# real table's far end is a tall wooden cabinet - match it.
+		{"size": Vector3(1.34, 1.00, 0.04), "pos": Vector3(0.0, 0.33, 3.48)},
+		{"size": Vector3(0.04, 0.60, 1.10), "pos": Vector3(-0.65, 0.18, 2.95)},
+		{"size": Vector3(0.04, 0.60, 1.10), "pos": Vector3(0.65, 0.18, 2.95)},
+	]
+	for r in trench:
+		var tb := StaticBody3D.new()
+		var tcs := CollisionShape3D.new()
+		var tbs := BoxShape3D.new()
+		tbs.size = r.size
+		tcs.shape = tbs
+		tb.add_child(tcs)
+		tb.position = r.pos
+		tb.collision_layer = 1
+		tb.collision_mask = 2
+		add_child(tb)
+		# VISIBLE trench: the channel used to be colliders-only - an invisible
+		# void the ball simply fell into. A dark channel floor + wood walls
+		# read as the real game's deep gutter cabinet.
+		var tm := MeshInstance3D.new()
+		var tbm := BoxMesh.new()
+		tbm.size = r.size
+		tm.mesh = tbm
+		var tmat := StandardMaterial3D.new()
+		if (r["pos"] as Vector3).y < -0.05:
+			tmat.albedo_color = Color(0.10, 0.11, 0.13)
+			tmat.roughness = 0.85
+		else:
+			tmat.albedo_color = Color(0.30, 0.20, 0.12)
+			tmat.roughness = 0.75
+		tm.material_override = tmat
+		tm.position = r.pos
+		add_child(tm)
 
 
 func _physics_process(_delta: float) -> void:
@@ -514,27 +626,41 @@ func _physics_process(_delta: float) -> void:
 		var bb := b as SCBBall
 		if bb.freeze:
 			continue
-		# Deep-zone rule: anything past the last astrolabe (z > 2.5) is in the
-		# gutter - resolve IMMEDIATELY so overpowered shots are claimed as
-		# lost, not returned (the gutter area overlap in _resolve_ball rates it).
-		if bb.position.z > 2.5:
-			_resolve_ball(t)
+		# ESCAPE GUARD FIRST: anything beyond the trench (z > 3.5), below the
+		# world, or way off-line is an overpowered/lost ball - snap it into
+		# the channel and claim GUTTERED. This must precede the deep-zone
+		# altitude gate, else a flyer past z=3.5 lands in that branch, finds
+		# no gutter overlap at its far position, and comes back as a bogus
+		# "returned" ball (sweep p=6.4: end=(0, 0.054, 5.26)).
+		if bb.position.z > 3.5 or bb.position.y < -0.5 or absf(bb.position.x) > 3.0:
+			bb.position.x = clampf(bb.position.x, -0.55, 0.55)
+			bb.position.z = clampf(bb.position.z, 2.60, 3.40)
+			bb.position.y = -0.10 + SCBBall.RADIUS_M + 0.002
+			_freeze_in_place(bb)
+			ball_guttered.emit(bb)
 			continue
-		# Out-of-world guard: a ball that escaped the board (tunneled, knocked
-		# over a rail) resolves INSTANTLY as a returned ball instead of hanging
-		# the shot until the flush delay.
-		if bb.position.y < -0.5 or absf(bb.position.x) > 3.0 or bb.position.z > 3.5:
-			_resolve_ball(t)
+		# Deep-zone rule: anything past the last astrolabe (z > 2.5) is in the
+		# gutter. But an OVERPOWERED ball crosses that line while still AIRBORNE
+		# (sweep: y up to 0.66) - resolving it there froze the ball mid-wall.
+		# Altitude gate: flying balls keep flying into the trench and are
+		# claimed the moment they land (or die) inside the gutter volume.
+		if bb.position.z > 2.5:
+			if bb.position.y < 0.10 or bb.linear_velocity.length() < 0.05:
+				_resolve_ball(t)
+			else:
+				_any_moving = true
+				still.append(t)
 			continue
 		var spd := bb.linear_velocity.length()
 		if spd > (0.03):
 			_any_moving = true
-		# Socket funnel: inside a cup, a gentle centre-pull + damping dips the
-		# ball into the groove so slow balls visibly get CAUGHT by the pocket.
-		# Speed-gated: a ball faster than the capture speed skims the groove
-		# untouched - the funnel must never bend a fast shot's path.
+		# Socket funnel: inside a ring, a gentle centre-pull + damping parks
+		# the ball in the cup so a caught ball visibly settles INTO the well.
+		# NOT speed-gated anymore: the raised catch ring physically contains
+		# whatever enters it (fast or slow), so the funnel only centres what
+		# is already trapped - a fast ball outside the rings is never touched.
 		var near := _socket_overlapping(bb)
-		if not near.is_empty() and spd <= SLOT_CAPTURE_SPEED:
+		if not near.is_empty():
 			var center: Vector3 = (near["area"] as Area3D).global_position
 			var to_c := center - bb.global_position
 			to_c.y = 0.0
@@ -618,6 +744,14 @@ func _resolve_ball(t: Dictionary) -> void:
 	var is_returned := _tray_zone != null and _tray_zone.overlaps_body(b)
 	var is_guttered := gutter != null and gutter.overlaps_body(b)
 	if is_guttered:
+		# Snap INTO the trench channel, not onto the extrapolated felt plane:
+		# ball_rest_y() has no knowledge of the trench cut-out (z>2.55), so
+		# snapping to it froze balls floating 19 cm above the channel (sweep
+		# p=4.4: end y=0.0898). Trench floor top is y=-0.10; rest = floor +
+		# radius + lip.
+		bb.position.x = clampf(bb.position.x, -0.55, 0.55)
+		bb.position.z = clampf(bb.position.z, 2.60, 3.40)
+		bb.position.y = -0.10 + SCBBall.RADIUS_M + 0.002
 		_freeze_in_place(bb)
 		ball_guttered.emit(bb)
 		return

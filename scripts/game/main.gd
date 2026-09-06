@@ -49,6 +49,9 @@ var _fov_punch := 0.0
 const SLING_K := 0.0035
 const MIN_POWER := 0.8
 const GUTTER_POWER_LIMIT := 3.3
+## Vertical fraction of launch power: the factory-spec parabolic toss onto the
+## raised star plates (single source of truth: ShotMath.HOP_K).
+const HOP_K := ShotMath.HOP_K
 
 
 func _ready() -> void:
@@ -69,8 +72,8 @@ func _ready() -> void:
 		world.spawn_hand_ball("red")
 		world.spawn_hand_ball("black")
 	_give_active_ball()
-	print("SCB_MAIN_VERSION=v10-gutter-20260905 SLING_K=%s serve=%s" % [
-		SLING_K, (active_ball.position if active_ball != null else Vector3.INF)])
+	print("SCB_MAIN_VERSION=v11-parabola-20260905 SLING_K=%s HOP_K=%s serve=%s" % [
+		SLING_K, HOP_K, (active_ball.position if active_ball != null else Vector3.INF)])
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -146,7 +149,12 @@ func _release_shot(screen_pos: Vector2) -> void:
 	# same transform, velocity on its first frame - the pattern test A proves.
 	print("SCB release len=%.0f power=%.2f angle=%.2f marker=%s" % [
 		len, power, angle, active_ball.freeze])
-	var launched := world.launch_hand_ball(active_ball, dir * power)
+	# Factory spec (YoTyan rules sheet): balls are TOSSED in a shallow parabola
+	# onto the raised star plates - they arc, land with a clack, deflect off
+	# plate edges and drop into wells. HOP_K gives the launch that vertical
+	# component; gravity does the rest.
+	var v := Vector3(dir.x * power, power * HOP_K, dir.z * power)
+	var launched := world.launch_hand_ball(active_ball, v)
 	if launched == null:
 		print("SCB LAUNCH FAILED - marker invalid")
 		active_ball = null
