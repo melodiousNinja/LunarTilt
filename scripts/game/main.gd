@@ -1,4 +1,4 @@
-extends Node3D
+﻿extends Node3D
 ## Lunar Tilt - main gameplay scene (V3).
 ##
 ## Drag-back SLINGSHOT: grab the ball and pull DOWN-screen (toward the tray)
@@ -72,7 +72,7 @@ func _ready() -> void:
 		world.spawn_hand_ball("red")
 		world.spawn_hand_ball("black")
 	_give_active_ball()
-	print("SCB_MAIN_VERSION=v11-parabola-20260905 SLING_K=%s HOP_K=%s serve=%s" % [
+	print("SCB_MAIN_VERSION=v12-capture-20260905 SLING_K=%s HOP_K=%s serve=%s" % [
 		SLING_K, HOP_K, (active_ball.position if active_ball != null else Vector3.INF)])
 
 
@@ -190,7 +190,7 @@ const _BALL_GRAB_PX := 150.0
 
 ## Slide-to-aim (live feedback): touching the felt instead of the ball slides
 ## the serve marker left/right along the launch line, so the player sets the
-## shot origin before pulling back. Clamped to the felt width (±0.52).
+## shot origin before pulling back. Clamped to the felt width (Â±0.52).
 func _slide_marker(screen_pos: Vector2) -> void:
 	if active_ball == null or not is_instance_valid(active_ball) or cam == null:
 		return

@@ -1,4 +1,4 @@
-class_name TableWorld
+﻿class_name TableWorld
 extends Node3D
 
 ## TableWorld V3 - builds and owns the entire Star Cluster Ball table.
@@ -60,6 +60,12 @@ const RACK_PITCH := 0.048          # (60 mm ball + 12 mm gap)
 
 ## A ball that has slowed below this while inside a scoring pocket is caught.
 const SLOT_CAPTURE_SPEED := 0.35
+## v12 DECISIVE CUP CAPTURE (2026-09 device session: 8 shots, 0 scores -
+## the old funnel pulled with mass*1.6 and damped 1.5%/frame, so a ball
+## crossing the 10 cm well zone at 0.4 m/s sailed through in 6 frames).
+## A ball inside a well zone slower than this DROPS INTO THE CUP; faster
+## balls are hauled by the strong funnel until they drop below it.
+const CAPTURE_SPEED := 0.9
 ## Physics frames a ball must linger near-rest before the pocket claims it.
 const SETTLE_FRAMES := 3
 ## True-rest thresholds (2026-09 live feedback): a ball decelerating up the
@@ -654,19 +660,26 @@ func _physics_process(_delta: float) -> void:
 		var spd := bb.linear_velocity.length()
 		if spd > (0.03):
 			_any_moving = true
-		# Socket funnel: inside a ring, a gentle centre-pull + damping parks
-		# the ball in the cup so a caught ball visibly settles INTO the well.
-		# NOT speed-gated anymore: the raised catch ring physically contains
-		# whatever enters it (fast or slow), so the funnel only centres what
-		# is already trapped - a fast ball outside the rings is never touched.
+		# Socket capture (v12 DECISIVE - the factory comb never lets a ball
+		# cruise across a well mouth. Three regimes inside the zone:
+		#   a) DESCENDING over the mouth: the arc drops the ball IN - claimed
+		#      immediately (official: a tossed ball landing in a groove sticks).
+		#   b) Below CAPTURE_SPEED: the slope/ring already beat it - cup claims.
+		#   c) Fast roller: strong centre-pull + hard damping bleed it to a
+		#      drop within a few frames; a genuine skim exits visibly slower.
+		# _resolve_ball owns the OFFICIAL outcome (claim / grouping / block).
 		var near := _socket_overlapping(bb)
 		if not near.is_empty():
 			var center: Vector3 = (near["area"] as Area3D).global_position
 			var to_c := center - bb.global_position
 			to_c.y = 0.0
+			if (to_c.length() <= SOCKET_R * 0.95 and bb.linear_velocity.y < -0.05) or spd < CAPTURE_SPEED:
+				bb.linear_velocity = Vector3.ZERO
+				_resolve_ball(t)
+				continue
 			if to_c.length() > 0.001:
-				bb.apply_central_force(to_c.normalized() * bb.mass * 1.6)
-			bb.linear_velocity *= 0.985
+				bb.apply_central_force(to_c.normalized() * bb.mass * 22.0)
+			bb.linear_velocity *= 0.86
 		# Zone-aware settle (see FELT_REST_SPEED above): decisive zones settle
 		# fast; open felt requires true rest so roll-backs finish their arc.
 		if spd > FELT_REST_SPEED:
