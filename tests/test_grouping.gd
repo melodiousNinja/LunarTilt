@@ -31,9 +31,8 @@ func _run() -> void:
 	# --- A. pure decision table (RulesEngine.resolve_socket) ---
 	var occ: Array = ["", "", "red", "", "black", "", ""]
 	var d := RulesEngine.resolve_socket(occ, 0, "red")
-	_expect(String(d["action"]) == "displace" and int(d["displace_col"]) == 2
-		and bool(d["keep_shooting"]),
-		"centre socket touches the whole ring: own ball at col 2 is displaced")
+	_expect(String(d["action"]) == "claim",
+		"v13 linear slits: col 0 only touches col 1 (empty) -> plain claim")
 	d = RulesEngine.resolve_socket(occ, 2, "red")
 	_expect(String(d["action"]) == "displace" and int(d["displace_col"]) == 2,
 		"landing on an own ball displaces it and keeps the turn")
@@ -64,17 +63,21 @@ func _run() -> void:
 	d = RulesEngine.resolve_socket(occ, -1, "red")
 	_expect(String(d["action"]) == "block", "out-of-range column -> block")
 
-	# --- B. 21 discrete sockets exist (official astrolabe layout) ---
+	# --- B. 15 discrete groove slits exist (v13 fan layout 7/5/3) ---
 	var world: TableWorld = WorldScript.new()
 	root.add_child(world)
 	for i in 30:
 		await physics_frame
-	_expect(world.slots.size() == 21, "21 sockets built (got %d)" % world.slots.size())
+	_expect(world.slots.size() == 15, "15 slits built (got %d)" % world.slots.size())
 	var cols_ok := true
+	var band_counts := {"0": 0, "1": 0, "2": 0}
 	for sd in world.slots:
-		if not sd.has("col") or int(sd["col"]) < 0 or int(sd["col"]) > 6:
+		band_counts[str(int(sd["band"]))] = int(band_counts[str(int(sd["band"]))]) + 1
+		if not sd.has("col") or int(sd["col"]) < 0 or int(sd["col"]) >= TableWorld.FAN_GAPS[int(sd["band"])]:
 			cols_ok = false
-	_expect(cols_ok, "every socket carries a column index 0..6")
+	_expect(cols_ok, "every slit carries a valid column index for its fan")
+	_expect(int(band_counts["0"]) == 7 and int(band_counts["1"]) == 5 and int(band_counts["2"]) == 3,
+		"fan slits 7/5/3 (got %s)" % str(band_counts))
 
 	# --- C. live claim: a settling ball claims an empty socket ---
 	var b := SCBBall.create("red")

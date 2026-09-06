@@ -55,7 +55,9 @@ func _run() -> void:
 	for i in 5:
 		await physics_frame
 
-	# Firm toss: must clear Venus and be caught by a Mars well.
+	# Firm toss: with HONEST slit geometry (no funnel) a 3.8 m/s toss
+	# overpowers the table - it clears every fan and dies in the gutter
+	# trench. That is the official lost-ball rule, not a regression.
 	var firm := SCBBall.create("red")
 	root.add_child(firm)
 	firm.position = Vector3(0.0, world.ball_rest_y(0.0, start_z), start_z)
@@ -70,9 +72,27 @@ func _run() -> void:
 		firm_peak, firm.position, firm.freeze])
 	_expect(firm_peak >= 1.4,
 		"firm toss reaches the Mars zone (peak z %.2f >= 1.4)" % firm_peak)
-	_expect(firm.freeze and firm.position.z > 1.2 and firm.position.z < 1.8,
-		"firm toss is captured in a Mars well (z %.2f)" % firm.position.z)
+	_expect(firm.freeze and firm.position.z > 2.4,
+		"firm toss overshoots into the gutter trench (z %.2f)" % firm.position.z)
 	firm.queue_free()
+	for i in 5:
+		await physics_frame
+
+	# Medium toss dead-centre (x=0 is slit col 2's centre on the middle
+	# fan): lands IN a Mars groove, rolls up the channel and rests against
+	# the back wall - the slit catches it. THE core v13 mechanic.
+	var med := SCBBall.create("red")
+	root.add_child(med)
+	med.position = Vector3(0.0, world.ball_rest_y(0.0, start_z), start_z)
+	med.linear_velocity = Vector3(0.0, 2.5 * ShotMath.HOP_K, 2.5)
+	med.angular_velocity = Vector3.ZERO
+	world.track_live(med)
+	for i in 420:
+		await physics_frame
+	print("SHOT medium end=%s frozen=%s" % [med.position, med.freeze])
+	_expect(med.freeze and med.position.z > 1.2 and med.position.z < 1.8,
+		"medium toss is caught by a Mars slit (z %.2f)" % med.position.z)
+	med.queue_free()
 	for i in 5:
 		await physics_frame
 

@@ -45,7 +45,7 @@ static func plan_shot(rng: RandomNumberGenerator, level: Level, board: Array, my
 ## (chain + grand-slam aware, uses the same engine the game scores with).
 static func _position_weight(pi: int, board: Array, my_color: String) -> float:
 	var trial := board.duplicate(true)
-	var pos := _normalize_position(trial[pi])
+	var pos := _normalize_position(pi, trial[pi])
 	var placed := false
 	for i in range(pos.size()):
 		if pos[i] == "":
@@ -60,12 +60,13 @@ static func _position_weight(pi: int, board: Array, my_color: String) -> float:
 	return float(after - before)
 
 
-## Accepts both sparse ([ "red", "black" ]) and full (7-slot) position arrays
-## and returns the full 7-slot form.
-static func _normalize_position(p: Array) -> Array:
+## Accepts both sparse ([ "red", "black" ]) and full position arrays and
+## returns the full form padded to that fan's OFFICIAL slit count (7/5/3) -
+## v13: every fan has its own width, so a pos3 row is 3 slits, not 7.
+static func _normalize_position(pi: int, p: Array) -> Array:
 	var out := []
 	for s in p:
 		out.append(s)
-	while out.size() < RulesEngine.SLOTS_PER_POSITION:
+	while out.size() < RulesEngine.POSITION_SLOTS[clampi(pi, 0, 2)]:
 		out.append("")
 	return out

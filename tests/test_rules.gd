@@ -27,16 +27,16 @@ func _test_all() -> void:
 	_expect(RulesEngine.score_board(b2)["per_color"]["red"] == 2, "single red pos2 = 2")
 	_expect(RulesEngine.score_board(b2)["breakdown"]["red"][1] == 2, "breakdown pos2 = 2")
 
-	# 3. single ball in position 3 = 5
-	_expect(RulesEngine.score_board([[], [], ["red"]])["per_color"]["red"] == 5, "single red pos3 = 5")
+	# 3. single ball in position 3 = 3 (v13 fan values 1/2/3)
+	_expect(RulesEngine.score_board([[], [], ["red"]])["per_color"]["red"] == 3, "single red pos3 = 3")
 
 	# 4. chain of 3 reds in pos1: base 3*1 + chain 1*(3-1) = 5
 	var b4 := [["red", "red", "red", "", "", "", ""], [], []]
 	_expect(RulesEngine.score_board(b4)["per_color"]["red"] == 5, "chain 3 pos1 = 5")
 
-	# 5. chain of 2 reds in pos3: base 2*5 + chain 5*(2-1) = 15
+	# 5. chain of 2 reds in pos3: base 2*3 + chain 3*(2-1) = 9
 	var b5 := [[], [], ["red", "red", "", "", "", "", ""]]
-	_expect(RulesEngine.score_board(b5)["per_color"]["red"] == 15, "chain 2 pos3 = 15")
+	_expect(RulesEngine.score_board(b5)["per_color"]["red"] == 9, "chain 2 pos3 = 9")
 
 	# 6. Grand Slam: full pos1 of reds -> base 7 doubled to 14, + chain 6 = 20
 	var b6 := [["red", "red", "red", "red", "red", "red", "red"], [], []]
@@ -68,8 +68,16 @@ func _test_all() -> void:
 	# 10. both players scoring independently, no cross-contamination
 	var b10 := [["red"], ["black"], ["red"]]
 	var res10 := RulesEngine.score_board(b10)
-	_expect(res10["per_color"]["red"] == 6, "red pos1+pos3 = 1+5 = 6")
+	_expect(res10["per_color"]["red"] == 4, "red pos1+pos3 = 1+3 = 4")
 	_expect(res10["per_color"]["black"] == 2, "black pos2 = 2")
+
+	# 11. v13 fan sizes: grand slams fill 7 / 5 / 3 slits respectively
+	var slam1 := RulesEngine.score_board([["red", "red", "red", "red", "red", "red", "red"], [], []])
+	_expect(slam1["per_color"]["red"] == 20, "pos1 slam: 7*1 x2 + chain 6 = 20")
+	var slam2 := RulesEngine.score_board([[], ["red", "red", "red", "red", "red"], []])
+	_expect(slam2["per_color"]["red"] == 28, "pos2 slam: 5*2 x2 + chain 2*4 = 28")
+	var slam3 := RulesEngine.score_board([[], [], ["red", "red", "red"]])
+	_expect(slam3["per_color"]["red"] == 24, "pos3 slam: 3*3 x2 + chain 3*2 = 24")
 
 
 func _expect(cond: bool, name: String) -> void:

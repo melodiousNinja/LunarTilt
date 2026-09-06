@@ -38,13 +38,14 @@ func _test_ai_heuristics() -> void:
 	# Empty board: AI should prefer the highest-value position (pos3).
 	var p1: Dictionary = AIOpponent.plan_shot(rng, AIOpponent.Level.STRATEGIST, [[], [], []], "red")
 	_expect(p1["target_pi"] == 2, "AI picks highest-value empty slot (pos3)")
-	# Board with 3 player balls already in pos3 (the 5-pt position): growing
-	# that chain has the largest marginal > any unclaimed slot.
-	var board := [[], [], ["red", "red", "red"]]
+	# Board with 2 reds already in pos3 (3-slit fan, highest value): growing
+	# that chain - one ball from completing the slam - has the largest
+	# marginal value of any move.
+	var board := [[], [], ["red", "red", ""]]
 	var p2: Dictionary = AIOpponent.plan_shot(rng, AIOpponent.Level.STRATEGIST, board, "red")
 	_expect(p2["target_pi"] == 2, "AI grows its highest-value chain (pos3)")
-	# Board nearing a Grand Slam in pos2 (6/7 filled): completing the slam wins.
-	var board_slam := [["", "", "", "", "", "", ""], ["red", "red", "red", "red", "red", "red", ""], []]
+	# Board nearing a Grand Slam in pos2 (4/5 filled): completing the slam wins.
+	var board_slam := [[], ["red", "red", "red", "red", ""], []]
 	var p3: Dictionary = AIOpponent.plan_shot(rng, AIOpponent.Level.STRATEGIST, board_slam, "red")
 	_expect(p3["target_pi"] == 1, "AI goes for the Grand Slam when one ball away")
 	# Stronger aim at higher levels: club jitter smaller than rookie.

@@ -34,17 +34,26 @@ const RAIL_H_TOTAL := 0.30
 ## World Y of the top face of the side rails (hand-ball racks rest on these).
 const RAIL_TOP_Y := -0.03 + RAIL_H_TOTAL * 0.5
 
-const SLOTS_PER_POS := 7
-const POS_Z := [0.75, 1.45, 2.15]     # astrolabe medallion centres (near..far)
-const MEDAL_R := 0.155                # brass ring radius of one medallion
-const CLUSTER_R := 0.096              # hex-flower ring radius (socket centres)
-const SOCKET_R := 0.037               # socket cup radius (ball r=0.030 - the cup must be BIGGER so the ball sits visibly in the groove)
-## v11 factory spec: the three scoring plates are RAISED hardware (the real
-## YoTyan table's star plates stand proud of the marble). Launched balls
-## deflect off the plate edge - a real collider, not a fake force - and slow
-## balls that settle on the plate drop into the wells sunk into its top.
+const SLOTS_PER_POS := 7              # deprecated alias (band 0 slit count)
+const POS_Z := [0.75, 1.45, 2.15]     # astrolabe fan centres (near..far)
+const MEDAL_R := 0.155                # deprecated alias
+const CLUSTER_R := 0.096              # deprecated alias
+const SOCKET_R := 0.037               # deprecated alias (ball r = 0.030)
+## v13 FAN ASTROLABES (2026-09-06 close-up of the real table): each scoring
+## position is a raised wooden FAN - solid blades with open GROOVE SLITS
+## between them, mouths facing the thrower, standing on pins. A ball that
+## rolls into a slit is caught by its walls + back wall (real geometry, no
+## funnel); a ball that clips a blade DEFLECTS off the raised edge. Slit
+## counts from the close-up: near fan 7 (1 pt), middle 5 "C B A C B" (2 pt),
+## far 3 "B A B" (3 pt).
+const FAN_GAPS := [7, 5, 3]
+const FAN_POINTS := [1, 2, 3]
+const FAN_MOUTH := [0.070, 0.078, 0.090]   # slit width at the mouth (ball dia 0.060)
+const FAN_BLADE := [0.026, 0.032, 0.042]   # solid wood between slits
+const FAN_DEPTH := [0.15, 0.16, 0.17]      # mouth-to-back depth
+const FAN_H := 0.016                       # platform height above the marble
 const PLATE_H := 0.010
-const PLATE_NAMES := ["VENUS", "MARS", "JUPITER"]
+const PLATE_NAMES := ["ONE", "TWO", "THREE"]
 const POCKET_X_HALF := 0.60             # playable half-width the bands span
 const PLAY_LINE_Z := 0.35
 const LAUNCH_Z := 0.22                # ball spawn behind the play line
@@ -129,16 +138,21 @@ static func rack_spot(color: String, index: int) -> Vector3:
 	return Vector3(x, _rack_floor_y(x) + SCBBall.RADIUS_M, z)
 
 
-## X center of slot lane `si` (shared across all three bands). Regression guard:
-## v3 briefly spaced lanes 0.42 m apart - half the plates hung off the board.
-## World position of socket `si` (0 = centre, 1..6 = hex ring) of position
-## `bi`. XZ only - callers add the tilted surface height.
+## Width of fan `bi`: (G+1) blades + G slit mouths.
+static func fan_width(bi: int) -> float:
+	var b := clampi(bi, 0, 2)
+	return float(FAN_GAPS[b] + 1) * FAN_BLADE[b] + float(FAN_GAPS[b]) * FAN_MOUTH[b]
+
+## World XZ of groove slit `si` (0 = leftmost) of fan `bi` - the slit centre
+## on the marble. Callers add the tilted surface height. Regression guard:
+## v9 briefly spaced plates 0.42 m apart - half hung off the board.
 static func socket_pos(bi: int, si: int) -> Vector3:
-	var cz: float = POS_Z[clampi(bi, 0, POS_Z.size() - 1)]
-	if si <= 0:
-		return Vector3(0.0, 0.0, cz)
-	var ang := (60.0 * float(si - 1) + 90.0) * PI / 180.0
-	return Vector3(cos(ang) * CLUSTER_R, 0.0, cz + sin(ang) * CLUSTER_R)
+	var b := clampi(bi, 0, 2)
+	var cz: float = POS_Z[b]
+	var col := clampi(si, 0, FAN_GAPS[b] - 1)
+	var x0 := -fan_width(b) * 0.5
+	var x: float = x0 + FAN_BLADE[b] + float(col) * (FAN_BLADE[b] + FAN_MOUTH[b]) + FAN_MOUTH[b] * 0.5
+	return Vector3(x, 0.0, cz)
 
 
 ## 8 corners of the visual frame we care about (racks + tray + table + gutter).
@@ -347,148 +361,123 @@ func _brass_material() -> StandardMaterial3D:
 	return mat
 
 
-## THE factory board (v11): three RAISED star plates down the centreline -
-## VENUS (1pt), MARS (2pt), JUPITER (5pt) - each a physical platform standing
-## PLATE_H proud of the marble, holding 7 real wells sunk into its top in a
-## hex-flower cluster. A launched ball that hits the plate wall DEFLECTS
-## (convex collider); a ball that lands on the plate and settles near a well
-## drops in and is caught. The old flush cups read as painted bowls a ball
-## rolled straight over - the factory plates are raised, and that height is
-## the deflection gameplay the user called out.
+## v13 FAN ASTROLABES - the real hardware from the close-up: raised wooden
+## fans of solid blades with open groove slits between them, mouths facing
+## the thrower, standing on pins above the marble. Slits are REAL physics
+## channels: a ball rolling in is caught by the walls + back wall (wood
+## friction beats the 5-degree slope); a ball clipping a blade DEFLECTS off
+## the raised edge. No funnel forces - geometry does the work.
 func _build_astrolabes() -> void:
-	var brass := _brass_material()
-	var plate_mat := StandardMaterial3D.new()
-	plate_mat.albedo_color = Color(0.16, 0.17, 0.19)   # gunmetal hardware
-	plate_mat.metallic = 0.75
-	plate_mat.roughness = 0.32
+	var wood := _wood_material()
 	for bi in range(POS_Z.size()):
 		var cz: float = POS_Z[bi]
+		var g: int = FAN_GAPS[bi]
+		var bw: float = FAN_BLADE[bi]
+		var m: float = FAN_MOUTH[bi]
+		var depth: float = FAN_DEPTH[bi]
+		var w := fan_width(bi)
+		var x0 := -w * 0.5
 		var sy: float = surface_y_at(0.0, cz)
-		var top_y: float = sy + PLATE_H
-		# --- raised plate: REAL physics body (edge deflection is free) ---
-		var pb := StaticBody3D.new()
-		var pcs := CollisionShape3D.new()
-		var pshape := CylinderShape3D.new()
-		pshape.radius = MEDAL_R
-		pshape.height = 0.05    # dug 40 mm into the board, 10 mm proud
-		pcs.shape = pshape
-		pb.add_child(pcs)
-		pb.position = Vector3(0.0, top_y - 0.025, cz)
-		pb.collision_layer = 1
-		pb.collision_mask = 2
-		add_child(pb)
-		var pv := MeshInstance3D.new()
-		var pm := CylinderMesh.new()
-		pm.top_radius = MEDAL_R
-		pm.bottom_radius = MEDAL_R
-		pm.height = 0.05
-		pv.mesh = pm
-		pv.material_override = plate_mat
-		pv.position = pb.position
-		add_child(pv)
-		# Ten star-point flares radiating from the rim (visual; physics stays
-		# the clean cylinder so deflection stays predictable).
-		for k in range(10):
-			var ang := TAU * float(k) / 10.0
-			var fl := MeshInstance3D.new()
-			var fbm2 := BoxMesh.new()
-			fbm2.size = Vector3(0.022, 0.004, 0.016)
-			fl.mesh = fbm2
-			fl.material_override = plate_mat
-			fl.position = Vector3(cos(ang) * (MEDAL_R + 0.010), top_y - 0.002,
-				cz + sin(ang) * (MEDAL_R + 0.010))
-			fl.rotation.y = -ang
-			add_child(fl)
-		# Brass ring trim flush with the plate top edge.
-		var ring := MeshInstance3D.new()
-		var rm := TorusMesh.new()
-		rm.inner_radius = MEDAL_R - 0.006
-		rm.outer_radius = MEDAL_R + 0.002
-		ring.mesh = rm
-		ring.material_override = brass
-		ring.position = Vector3(0.0, top_y - 0.001, cz)
-		add_child(ring)
-		# Point value etched on the marble in front of the plate.
-		var lbl := Label3D.new()
-		lbl.text = ["1", "2", "5"][bi]
-		lbl.modulate = POS_GLOW[bi]
-		lbl.font_size = 96
-		lbl.pixel_size = 0.0006
-		lbl.outline_size = 0
-		lbl.rotation_degrees = Vector3(-84.0, 0.0, 0.0)
-		lbl.position = Vector3(0.0, sy + 0.004, cz - MEDAL_R - 0.035)
-		add_child(lbl)
-		# Planet name etched on the marble beyond the plate.
-		var name_lbl := Label3D.new()
-		name_lbl.text = PLATE_NAMES[bi]
-		name_lbl.modulate = POS_GLOW[bi] * 0.85
-		name_lbl.font_size = 64
-		name_lbl.pixel_size = 0.0006
-		name_lbl.outline_size = 0
-		name_lbl.rotation_degrees = Vector3(-84.0, 0.0, 0.0)
-		name_lbl.position = Vector3(0.0, sy + 0.004, cz + MEDAL_R + 0.040)
-		add_child(name_lbl)
-		for si in range(SLOTS_PER_POS):
-			var sp := socket_pos(bi, si)
-			# Capture area (speed-gated settle logic picks this up).
+		var top_y: float = sy + FAN_H
+		# one physics body for the whole fan, tilted with the board so the
+		# platform top sits FAN_H above the marble along the whole depth
+		var fan := StaticBody3D.new()
+		fan.collision_layer = 1
+		fan.collision_mask = 2
+		fan.position = Vector3(0.0, sy, cz)
+		fan.rotation.x = -deg_to_rad(TILT_DEG)
+		# blades: G+1 solid pieces, tip length forming the fan's arc profile
+		for i in range(g + 1):
+			var bx := x0 + float(i) * (bw + m) + bw * 0.5
+			var half := float(g) * 0.5
+			var taper: float = clampf(1.0 - absf(float(i) - half) / (half + 1.0), 0.5, 1.0)
+			var bl: float = depth * (0.66 + 0.34 * taper)
+			var bcs := CollisionShape3D.new()
+			var bshape := BoxShape3D.new()
+			bshape.size = Vector3(bw, FAN_H, bl)
+			bcs.shape = bshape
+			bcs.position = Vector3(bx, FAN_H * 0.5, -depth * 0.5 + bl * 0.5)
+			fan.add_child(bcs)
+			var bmesh := MeshInstance3D.new()
+			var bmm := BoxMesh.new()
+			bmm.size = bshape.size
+			bmesh.mesh = bmm
+			bmesh.material_override = wood
+			bmesh.position = bcs.position
+			fan.add_child(bmesh)
+			# brass pin under the blade tip (the raised-hardware look)
+			var pin := MeshInstance3D.new()
+			var pcm := CylinderMesh.new()
+			pcm.top_radius = 0.004
+			pcm.bottom_radius = 0.004
+			pcm.height = FAN_H + 0.012
+			pin.mesh = pcm
+			pin.material_override = _brass_material()
+			pin.position = Vector3(bx, -(FAN_H + 0.012) * 0.5 + FAN_H * 0.5, -depth * 0.5 + 0.02)
+			fan.add_child(pin)
+		# back wall: full-width bar the ball finally rests against
+		var wcs := CollisionShape3D.new()
+		var wshape := BoxShape3D.new()
+		wshape.size = Vector3(w, FAN_H + 0.010, 0.012)
+		wcs.shape = wshape
+		wcs.position = Vector3(0.0, (FAN_H + 0.010) * 0.5, depth * 0.5)
+		fan.add_child(wcs)
+		var wmesh := MeshInstance3D.new()
+		var wbmm := BoxMesh.new()
+		wbmm.size = wshape.size
+		wmesh.mesh = wbmm
+		wmesh.material_override = wood
+		wmesh.position = wcs.position
+		fan.add_child(wmesh)
+		add_child(fan)
+		# --- per-slit: capture area + claim-glow floor strip + mouth letter ---
+		for si in range(g):
+			var sx := x0 + bw + float(si) * (bw + m) + m * 0.5
 			var area := Area3D.new()
 			var cs := CollisionShape3D.new()
-			var sb := SphereShape3D.new()
-			sb.radius = SOCKET_R + 0.014
+			var sb := BoxShape3D.new()
+			sb.size = Vector3(m * 0.9, 0.05, depth * 0.9)
 			cs.shape = sb
 			area.add_child(cs)
-			area.position = Vector3(sp.x, top_y + 0.012, sp.z)
+			area.position = Vector3(sx, top_y + 0.006, cz)
 			area.collision_layer = 0
 			area.collision_mask = 2
 			area.monitoring = true
 			add_child(area)
-			# The well: a REAL groove sunk INTO the plate top (not proud of
-			# it) with a brass rim flush with the plate surface, so a caught
-			# ball visibly sits IN the hardware.
-			var cup := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = SOCKET_R
-			cm.bottom_radius = SOCKET_R * 0.72
-			cm.height = 0.010
+			# dark slit floor strip - recolours to the owner's glow on claim
 			var cup_mat := StandardMaterial3D.new()
 			cup_mat.albedo_color = Color(0.05, 0.05, 0.06)
-			cup_mat.metallic = 0.5
-			cup_mat.roughness = 0.4
-			cup.mesh = cm
-			cup.material_override = cup_mat
-			cup.position = Vector3(sp.x, top_y - 0.007, sp.z)  # top 2 mm below plate top
-			add_child(cup)
-			var rim := MeshInstance3D.new()
-			var tm := TorusMesh.new()
-			tm.inner_radius = SOCKET_R - 0.004
-			tm.outer_radius = SOCKET_R + 0.006
-			rim.mesh = tm
-			rim.material_override = brass
-			rim.position = Vector3(sp.x, top_y - 0.0045, sp.z)  # flush with plate top
-			add_child(rim)
-			# The catch ring: 8 REAL wall segments standing PROUD of the plate
-			# top around the well mouth (the factory socket's moulded lip). A
-			# ball that rolls into the ring is TRAPPED by geometry - it cannot
-			# roll back out - and the funnel parks it in the cup to be scored.
-			# A ball that clips the ring DEFLECTS: the raised lips are actual
-			# obstacles, exactly as on the hardware (2026-09 user feedback).
-			var ring_body := StaticBody3D.new()
-			ring_body.collision_layer = 1
-			ring_body.collision_mask = 2
-			var wr := SOCKET_R + 0.005
-			for k in range(8):
-				var wang := TAU * float(k) / 8.0
-				var wcs := CollisionShape3D.new()
-				var wbox := BoxShape3D.new()
-				wbox.size = Vector3(0.034, 0.014, 0.008)
-				wcs.shape = wbox
-				wcs.position = Vector3(cos(wang) * wr, 0.007, sin(wang) * wr)
-				wcs.rotation.y = -wang
-				ring_body.add_child(wcs)
-			ring_body.position = Vector3(sp.x, top_y, sp.z)
-			add_child(ring_body)
+			cup_mat.roughness = 0.85
+			var slit_floor := MeshInstance3D.new()
+			var sfm := BoxMesh.new()
+			sfm.size = Vector3(m * 0.86, 0.004, depth * 0.86)
+			slit_floor.mesh = sfm
+			slit_floor.material_override = cup_mat
+			slit_floor.position = Vector3(sx, sy + 0.006, cz)
+			add_child(slit_floor)
+			# letter etched at the slit mouth (A at the centre, outward B, C..)
+			var letter_idx := clampi(int(absf(float(si) - float(g - 1) * 0.5)), 0, 5)
+			var llbl := Label3D.new()
+			llbl.text = "ABCDEF".substr(letter_idx, 1)
+			llbl.modulate = Color(0.85, 0.83, 0.78)
+			llbl.font_size = 40
+			llbl.pixel_size = 0.0006
+			llbl.outline_size = 0
+			llbl.rotation_degrees = Vector3(-84.0, 0.0, 0.0)
+			llbl.position = Vector3(sx, sy + 0.004, cz - depth * 0.5 - 0.022)
+			add_child(llbl)
 			slots.append({"band": bi, "col": si, "area": area, "color": "",
 				"cup": cup_mat})
+		# point value painted on the marble just past the fan's back wall
+		var lbl := Label3D.new()
+		lbl.text = str(FAN_POINTS[bi])
+		lbl.modulate = Color(0.78, 0.16, 0.14)
+		lbl.font_size = 110
+		lbl.pixel_size = 0.0006
+		lbl.outline_size = 0
+		lbl.rotation_degrees = Vector3(-84.0, 0.0, 0.0)
+		lbl.position = Vector3(0.0, sy + 0.004, cz + depth * 0.5 + 0.030)
+		add_child(lbl)
 
 
 ## Brass guardline inlays up both edges of the playfield (the factory table's
@@ -621,6 +610,19 @@ func _build_tray() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	# Adopt any live ball that lost its tracker (a ball knocked loose out of
+	# a slit by a later shot, for example) so EVERY ball stays watched until
+	# it reaches a terminal state - no more orphaned balls stuck mid-board.
+	for lb in live_balls:
+		if lb == null or not is_instance_valid(lb) or (lb as SCBBall).freeze:
+			continue
+		var known := false
+		for t in _tracked:
+			if t.get("ball") == lb:
+				known = true
+				break
+		if not known:
+			_tracked.append({"ball": lb, "frames": 0, "anchor": null, "nudges": 0})
 	if _tracked.size() == 0:
 		return
 	_any_moving = false
@@ -660,26 +662,14 @@ func _physics_process(_delta: float) -> void:
 		var spd := bb.linear_velocity.length()
 		if spd > (0.03):
 			_any_moving = true
-		# Socket capture (v12 DECISIVE - the factory comb never lets a ball
-		# cruise across a well mouth. Three regimes inside the zone:
-		#   a) DESCENDING over the mouth: the arc drops the ball IN - claimed
-		#      immediately (official: a tossed ball landing in a groove sticks).
-		#   b) Below CAPTURE_SPEED: the slope/ring already beat it - cup claims.
-		#   c) Fast roller: strong centre-pull + hard damping bleed it to a
-		#      drop within a few frames; a genuine skim exits visibly slower.
-		# _resolve_ball owns the OFFICIAL outcome (claim / grouping / block).
-		var near := _socket_overlapping(bb)
-		if not near.is_empty():
-			var center: Vector3 = (near["area"] as Area3D).global_position
-			var to_c := center - bb.global_position
-			to_c.y = 0.0
-			if (to_c.length() <= SOCKET_R * 0.95 and bb.linear_velocity.y < -0.05) or spd < CAPTURE_SPEED:
-				bb.linear_velocity = Vector3.ZERO
-				_resolve_ball(t)
-				continue
-			if to_c.length() > 0.001:
-				bb.apply_central_force(to_c.normalized() * bb.mass * 22.0)
-			bb.linear_velocity *= 0.86
+		# v13 SLIT CAPTURE: the grooves are real geometry now - walls + back
+		# wall catch the ball, wood friction holds it against the slope. No
+		# funnel forces. A ball inside a slit area slower than CAPTURE_SPEED
+		# is claimed by _resolve_ball (official claim / grouping / block);
+		# faster balls skim across the open slits or deflect off the blades.
+		if spd < CAPTURE_SPEED and not _socket_overlapping(bb).is_empty():
+			_resolve_ball(t)
+			continue
 		# Zone-aware settle (see FELT_REST_SPEED above): decisive zones settle
 		# fast; open felt requires true rest so roll-backs finish their arc.
 		if spd > FELT_REST_SPEED:
@@ -708,9 +698,11 @@ func _physics_process(_delta: float) -> void:
 				still.append(t)
 				continue
 			t["nudges"] = int(t.get("nudges", 0)) + 1
-			if int(t["nudges"]) <= 3:
+			if int(t["nudges"]) <= 5:
+				# hop + push: break static contact so the ball visibly
+				# struggles free and finishes its roll-back to the tray
 				bb.sleeping = false
-				bb.apply_central_impulse(Vector3(0.0, 0.0, -0.4) * bb.mass)
+				bb.apply_central_impulse(Vector3(0.0, 0.10, -0.7) * bb.mass)
 				t["frames"] = 0
 				t["anchor"] = bb.position
 				still.append(t)
@@ -791,12 +783,12 @@ func _resolve_ball(t: Dictionary) -> void:
 		_claim_socket(sd, bb)
 		ball_scored.emit(bb, int(sd["band"]), bool(dec["keep_shooting"]))
 		return
-	# Open felt: the ball STAYS on the table as a live obstacle (2026-09 live
-	# feedback: resolving it back to the rack made balls vanish mid-board and
-	# left the table empty - players expect the full up-and-back path to
-	# persist and later shots to clash with resting balls).
-	_freeze_in_place(bb)
-	ball_grouped.emit(bb)  # main plays the block sound (single SFX source)
+	# Open felt: a 5-degree slope cannot hold a ball - the real sport never
+	# lets one rest mid-board (2026-09 user feedback: stuck balls "very
+	# annoying"). The settle-detector nudged it 5 times already; resolve it
+	# now by the sport's Returned-Ball rule: back to the rack, free shot.
+	reinsert_hand_ball(bb)
+	ball_returned.emit(bb)
 
 
 ## Safe sound hook: the Sfx autoload is absent in headless test runs, so

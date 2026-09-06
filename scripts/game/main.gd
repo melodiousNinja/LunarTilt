@@ -72,7 +72,7 @@ func _ready() -> void:
 		world.spawn_hand_ball("red")
 		world.spawn_hand_ball("black")
 	_give_active_ball()
-	print("SCB_MAIN_VERSION=v12-capture-20260905 SLING_K=%s HOP_K=%s serve=%s" % [
+	print("SCB_MAIN_VERSION=v13-fans-20260906 SLING_K=%s HOP_K=%s serve=%s" % [
 		SLING_K, HOP_K, (active_ball.position if active_ball != null else Vector3.INF)])
 
 
@@ -280,7 +280,7 @@ func _add_landing_marker(pos: Vector3) -> void:
 # ------------------------------------------------------------ shot outcome --
 
 func _on_ball_scored(ball: SCBBall, band: int, keep_shooting: bool) -> void:
-	var pts: int = [1, 2, 5][clampi(band, 0, 2)]
+	var pts: int = world.FAN_POINTS[clampi(band, 0, 2)]  # v13 fan values 1/2/3
 	print("SCB SCORED color=%s band=%d pts=%d keep=%s" % [
 		ball.color, band, pts, keep_shooting])
 	scores[ball.color] = int(scores[ball.color]) + pts

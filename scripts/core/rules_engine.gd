@@ -17,15 +17,22 @@ extends Node
 ## Colors are plain strings ("red"/"black") so this stays engine-agnostic.
 
 const SLOTS_PER_POSITION := 7
+## v13: official slit count per fan position (near fan 7, middle 5, far 3).
+## A Grand Slam means a position's FULL slit row is one colour - which also
+## requires the row to actually be fan-sized (guards against short test rows
+## like [["red"]] counting as an instant "slam").
+const POSITION_SLOTS := [7, 5, 3]
 const POSITION_COLORS := ["red", "black"]
 
+## v13: fan point values from the close-up of the real table - the three
+## astrolabes are labelled 1, 2 and 3 (near -> far).
 const BASE_POINTS := {
-	"red": [1, 2, 5],
-	"black": [1, 2, 5],
+	"red": [1, 2, 3],
+	"black": [1, 2, 3],
 }
 const CHAIN_BONUS := {
-	"red": [1, 2, 5],
-	"black": [1, 2, 5],
+	"red": [1, 2, 3],
+	"black": [1, 2, 3],
 }
 
 
@@ -53,7 +60,7 @@ static func score_board(board: Array) -> Dictionary:
 				continue
 			var pts: int = n * int(BASE_POINTS[color][pi])
 			var chain_bonus: int = int(CHAIN_BONUS[color][pi]) * int(extras[color])
-			var grand := (n == SLOTS_PER_POSITION)
+			var grand: bool = (n == slots.size() and slots.size() == int(POSITION_SLOTS[pi]))
 			if grand:
 				pts *= 2
 				result["grand_slams"].append(color)
@@ -108,34 +115,36 @@ static func shot_scored(shot_slots: Array) -> bool:
 	return false
 
 
-## Hex-flower cluster adjacency (factory astrolabe): socket 0 is the centre,
-## sockets 1..6 form the ring. The centre touches every ring socket; a ring
-## socket touches the centre and its two ring neighbours (cyclic).
-const SOCKET_NEIGHBORS := [
-	[1, 2, 3, 4, 5, 6],
-	[0, 2, 6], [0, 1, 3], [0, 2, 4],
-	[0, 3, 5], [0, 4, 6], [0, 5, 1],
-]
+## v13 fan layout: grooves sit side by side on a fan, so adjacency is LINEAR
+## - a slit touches only its immediate left/right neighbours. Computed from
+## the row size so every fan width (7/5/3 slits) chains correctly.
+static func neighbors_for(col: int, n: int) -> Array:
+	var out: Array = []
+	if col > 0:
+		out.append(col - 1)
+	if col < n - 1:
+		out.append(col + 1)
+	return out
 
 
-## OFFICIAL GROUPING decision for a ball settling on socket `col` of a
-## position whose sockets hold `occupancy` ("" / "red" / "black", socket
-## index order). Returns { action: "claim"|"displace"|"block",
+## OFFICIAL GROUPING decision for a ball settling on slit `col` of a fan
+## whose slits hold `occupancy` ("" / "red" / "black", slit index order).
+## Returns { action: "claim"|"displace"|"block",
 ##                    displace_col: int (-1 none),
 ##                    keep_shooting: bool }.
-##   - EMPTY socket, no same-colour neighbour  -> claim; the ball STAYS on the
+##   - EMPTY slit, no same-colour neighbour  -> claim; the ball STAYS on the
 ##     table as a blocker and the turn passes.
-##   - Same-colour ball in an ADJACENT socket (or already in the target) ->
+##   - Same-colour ball in an ADJACENT slit (or already in the target) ->
 ##     that ball returns to its owner's rack (displacement) and the shooter
 ##     KEEPS shooting.
-##   - Socket walled by the other colour with no own neighbour -> the ball
+##   - Slit walled by the other colour with no own neighbour -> the ball
 ##     rests against it as a grouping wall; no score, turn passes.
 static func resolve_socket(occupancy: Array, col: int, color: String) -> Dictionary:
 	var n := occupancy.size()
-	if col < 0 or col >= n or col >= SOCKET_NEIGHBORS.size():
+	if col < 0 or col >= n:
 		return {"action": "block", "displace_col": -1, "keep_shooting": false}
-	for nb in SOCKET_NEIGHBORS[col]:
-		if nb < n and String(occupancy[nb]) == color:
+	for nb in neighbors_for(col, n):
+		if String(occupancy[nb]) == color:
 			return {"action": "displace", "displace_col": nb, "keep_shooting": true}
 	var occ := String(occupancy[col])
 	if occ == "":
