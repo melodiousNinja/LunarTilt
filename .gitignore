@@ -27,3 +27,8 @@ Thumbs.db
 
 # large local reference videos
 docs/*.mp4
+
+# stale logs + large reference videos + local toolchain
+tmp_*.log
+docs/*.mp4
+tools/
