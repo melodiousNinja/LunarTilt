@@ -92,17 +92,22 @@ func _run() -> void:
 		"socket 1:3 records the claim")
 	_expect(world.socket_balls.has("1:3"), "socket registry holds the claim")
 	b.queue_free()
+	# Clean up after ourselves: section C claimed slot 1:3, so release that
+	# claim before section D reuses the same slot - otherwise D's incoming
+	# ball correctly sees a BOOKED gap and blocks instead of scoring.
+	world._take_socket_ball(1, 3)
 	for i in 5:
 		await physics_frame
 
-	# --- D. live grouping: land next to an own ball -> neighbour re-racked ---
+	# --- D. booked gaps are PERMANENT (v14 user rule): an incoming ball
+	# claims an empty gap and never touches a booked neighbour ---
 	world.spawn_hand_ball("red")
 	var rack_before: int = (world.hand_balls["red"] as Array).size()
 	var n := SCBBall.create("red")
 	root.add_child(n)
 	var sp2: Vector3 = world.socket_pos(1, 2)
 	n.position = Vector3(sp2.x, world.ball_rest_y(sp2.x, sp2.z), sp2.z)
-	world._claim_socket(world.slots[9], n)   # band 1, col 2 claimed
+	world._claim_socket(world.slots[9], n)   # band 1, col 2 booked
 	var inc := SCBBall.create("red")
 	root.add_child(inc)
 	var sp3: Vector3 = world.socket_pos(1, 3)
@@ -116,16 +121,33 @@ func _run() -> void:
 	world.track_live(inc)
 	for i in 60:
 		await physics_frame
-	_expect(inc.freeze, "incoming ball claims the adjacent socket")
-	_expect(String(world.slots[9]["color"]) == "",
-		"displaced neighbour's socket is freed")
+	_expect(inc.freeze, "incoming ball claims the empty gap")
+	_expect(String(world.slots[9]["color"]) == "red",
+		"booked neighbour gap is untouched (no magical replacement)")
 	_expect(String(world.slots[10]["color"]) == "red",
-		"incoming ball owns the new socket")
+		"incoming ball owns the new gap")
 	var rack_after: int = (world.hand_balls["red"] as Array).size()
-	_expect(rack_after == rack_before + 1,
-		"displaced ball returned to the rack (%d -> %d)" % [rack_before, rack_after])
-	_expect(keep[0], "grouping keeps the shooter's turn")
+	_expect(rack_after == rack_before,
+		"no displacement: the booked ball stays on the table")
+	_expect(not keep[0], "claims pass the turn (no keep-shooting)")
 	_expect(scored_band[0] == 1, "claim scored in position 2")
+	# D2: an incoming ball into an OCCUPIED gap can never recapture it.
+	var occ_ball := SCBBall.create("black")
+	root.add_child(occ_ball)
+	occ_ball.position = Vector3(sp2.x, world.ball_rest_y(sp2.x, sp2.z) + 0.02, sp2.z)
+	occ_ball.linear_velocity = Vector3.ZERO
+	var grouped_flag := [false]
+	world.ball_grouped.connect(func(_b: SCBBall) -> void: grouped_flag[0] = true)
+	world.track_live(occ_ball)
+	for i in 60:
+		await physics_frame
+	_expect(occ_ball.freeze and grouped_flag[0],
+		"ball settling on a booked gap is blocked (turn passes, no score)")
+	_expect(String(world.slots[9]["color"]) == "red",
+		"the booked gap still belongs to red")
+	occ_ball.queue_free()
+	for i in 5:
+		await physics_frame
 
 	print("GROUPING_TEST total=%d failures=%d" % [_total, _failures])
 	if _failures == 0:

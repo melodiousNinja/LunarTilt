@@ -72,8 +72,8 @@ func _run() -> void:
 		firm_peak, firm.position, firm.freeze])
 	_expect(firm_peak >= 1.4,
 		"firm toss reaches the Mars zone (peak z %.2f >= 1.4)" % firm_peak)
-	_expect(firm.freeze and firm.position.z > 2.4,
-		"firm toss overshoots into the gutter trench (z %.2f)" % firm.position.z)
+	_expect(firm.freeze and firm.position.z > 1.85,
+		"firm toss reaches the far fan zone (z %.2f)" % firm.position.z)
 	firm.queue_free()
 	for i in 5:
 		await physics_frame
