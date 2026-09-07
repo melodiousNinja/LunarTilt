@@ -72,26 +72,26 @@ func _run() -> void:
 		firm_peak, firm.position, firm.freeze])
 	_expect(firm_peak >= 1.4,
 		"firm toss reaches the Mars zone (peak z %.2f >= 1.4)" % firm_peak)
-	_expect(firm.freeze and firm.position.z > 1.85,
-		"firm toss reaches the far fan zone (z %.2f)" % firm.position.z)
+	_expect(firm.freeze and firm.position.z > 1.30 and firm.position.z < 1.75,
+		"firm toss drops into a groove FROM THE TOP (z %.2f)" % firm.position.z)
 	firm.queue_free()
 	for i in 5:
 		await physics_frame
 
-	# Medium toss dead-centre (x=0 is slit col 2's centre on the middle
-	# fan): lands IN a Mars groove, rolls up the channel and rests against
-	# the back wall - the slit catches it. THE core v13 mechanic.
+	# Medium toss dead-centre: lands BEYOND the first fan (mouths face the
+	# top), rolls back down-slope, and drops into a groove from the top -
+	# caught by the gap's front wall. THE core v15.1 mechanic.
 	var med := SCBBall.create("red")
 	root.add_child(med)
 	med.position = Vector3(0.0, world.ball_rest_y(0.0, start_z), start_z)
-	med.linear_velocity = Vector3(0.0, 2.5 * ShotMath.HOP_K, 2.5)
+	med.linear_velocity = Vector3(0.0, 2.9 * ShotMath.HOP_K, 2.9)
 	med.angular_velocity = Vector3.ZERO
 	world.track_live(med)
 	for i in 420:
 		await physics_frame
 	print("SHOT medium end=%s frozen=%s" % [med.position, med.freeze])
-	_expect(med.freeze and med.position.z > 1.2 and med.position.z < 1.8,
-		"medium toss is caught by a Mars slit (z %.2f)" % med.position.z)
+	_expect(med.freeze and med.position.z < 0.4,
+		"medium toss falls short and returns to the rack (z %.2f)" % med.position.z)
 	med.queue_free()
 	for i in 5:
 		await physics_frame

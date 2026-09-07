@@ -35,10 +35,9 @@ const RAIL_H_TOTAL := 0.30
 const RAIL_TOP_Y := -0.03 + RAIL_H_TOTAL * 0.5
 
 const SLOTS_PER_POS := 7              # deprecated alias (band 0 slit count)
-const POS_Z := [1.35, 1.75, 2.15]     # astrolabe fan centres - CLUSTERED in
-                                      # the upper half per the reference video
-                                      # (long open run-up from the throw line,
-                                      # small gaps between the three fans)
+const POS_Z := [1.45, 1.95, 2.45]     # astrolabe fan centres - spaced for
+                                      # playability (0.5 m between fans) with
+                                      # the long run-up kept (v15.1)
 const MEDAL_R := 0.155                # deprecated alias
 const CLUSTER_R := 0.096              # deprecated alias
 const SOCKET_R := 0.037               # deprecated alias (ball r = 0.030)
@@ -53,7 +52,7 @@ const FAN_GAPS := [7, 5, 3]
 const FAN_POINTS := [1, 2, 3]
 const FAN_MOUTH := [0.070, 0.078, 0.090]   # slit width at the mouth (ball dia 0.060)
 const FAN_BLADE := [0.026, 0.032, 0.042]   # solid wood between slits
-const FAN_DEPTH := [0.15, 0.16, 0.17]      # mouth-to-back depth
+const FAN_DEPTH := [0.22, 0.24, 0.26]      # mouth-to-front-wall depth
 const FAN_H := 0.016                       # platform height above the marble
 const PLATE_H := 0.010
 const PLATE_NAMES := ["ONE", "TWO", "THREE"]
@@ -204,7 +203,7 @@ func _surface_material() -> ShaderMaterial:
 	mat.set_shader_parameter("vein_scale", 4.0)
 	# Satin stone, not mirror: at the camera's grazing angle a low-roughness
 	# surface Fresnel-reflects the bright sky and washes the body out to white.
-	mat.set_shader_parameter("body_col", Color(0.16, 0.20, 0.22))
+	mat.set_shader_parameter("body_col", Color(0.21, 0.24, 0.27))
 	mat.set_shader_parameter("vein_col", Color(0.13, 0.40, 0.38))
 	mat.set_shader_parameter("rough_min", 0.34)
 	mat.set_shader_parameter("rough_max", 0.55)
@@ -403,12 +402,13 @@ func _half_disc_mesh(radius: float, thick: float) -> ArrayMesh:
 	return st.commit()
 
 
-## v14 FAN ASTROLABES - built exactly to the user's spec from the close-up:
-## a semi-circular wooden base plank ("the bowl"), a TRIANGULAR plank on top
-## of it (centre ridge highest), and equal-length wooden spikes standing on
-## that plank along the arc - so the spike TIPS form a slight slant with the
-## centre spike proudest. Balls roll up-slope, pass between the spike comb,
-## and nest on the plank between two spikes, where the slit area claims them.
+## v15.1 FAN ASTROLABES - corrected per the owner's last-try feedback:
+## gap MOUTHS FACE THE TOP (up-slope). A tossed ball lands on or beyond the
+## fan, rolls BACK down-slope, and drops into a gap from the top; the gap's
+## front wall (toward the thrower) stops it. The plank is tilted to rise
+## toward the front, so any ball landing on the fan self-loads toward the
+## top mouths. Light maple wood + dark recessed gap channels so the grooves
+## READ, and a prominent spike comb flanking every mouth.
 func _build_astrolabes() -> void:
 	var wood := _wood_material()
 	for bi in range(POS_Z.size()):
@@ -419,6 +419,13 @@ func _build_astrolabes() -> void:
 		var half_w := fan_width(bi) * 0.5
 		var w := half_w * 2.0
 		var sy: float = surface_y_at(0.0, cz)
+		# light maple hardware (the close-up's pale fans - dark grooves pop)
+		var maple := StandardMaterial3D.new()
+		maple.albedo_color = Color(0.82, 0.74, 0.56)
+		maple.roughness = 0.5
+		var oak := StandardMaterial3D.new()
+		oak.albedo_color = Color(0.88, 0.80, 0.62)
+		oak.roughness = 0.45
 		# one physics body per fan, tilted with the board
 		var fan := StaticBody3D.new()
 		fan.collision_layer = 1
@@ -426,71 +433,81 @@ func _build_astrolabes() -> void:
 		fan.position = Vector3(0.0, sy, cz)
 		fan.rotation.x = -deg_to_rad(TILT_DEG)
 		# --- semi-circular base plank (the bowl) ---
-		var bmat := _wood_material()
+		var bmat := StandardMaterial3D.new()
+		bmat.albedo_color = Color(0.74, 0.64, 0.47)
+		bmat.roughness = 0.55
 		bmat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		var base_mi := MeshInstance3D.new()
 		base_mi.mesh = _half_disc_mesh(half_w, 0.012)
 		base_mi.material_override = bmat
-		base_mi.position = Vector3(0.0, 0.006, depth * 0.2)
+		base_mi.position = Vector3(0.0, 0.006, 0.0)
 		fan.add_child(base_mi)
-		var bcs := CollisionShape3D.new()
-		var bshape := BoxShape3D.new()
-		bshape.size = Vector3(w, 0.012, depth * 0.95)
-		bcs.shape = bshape
-		bcs.position = Vector3(0.0, 0.006, depth * 0.2)
-		fan.add_child(bcs)
-		# --- triangular plank on top: gabled roof, centre ridge highest,
-		# surface also rising slightly toward the back where balls rest ---
-		var ridge_h := 0.018
-		var back_h := 0.014
-		var slope := atan2(ridge_h, half_w)
-		for side in [-1.0, 1.0]:
-			var roof := CollisionShape3D.new()
-			var rshape := BoxShape3D.new()
-			rshape.size = Vector3(half_w * 1.02, 0.014, depth * 0.92)
-			roof.shape = rshape
-			roof.position = Vector3(side * half_w * 0.5, 0.012 + ridge_h * 0.5, depth * 0.16)
-			roof.rotation = Vector3(atan2(back_h, depth), 0.0, -side * slope)
-			fan.add_child(roof)
-			var rmi := MeshInstance3D.new()
-			var rmesh := BoxMesh.new()
-			rmesh.size = rshape.size
-			rmi.mesh = rmesh
-			rmi.material_override = wood
-			rmi.position = roof.position
-			rmi.rotation = roof.rotation
-			fan.add_child(rmi)
-		# --- spike comb along the arc: equal-length pins standing on the
-		# gabled plank - tips slant down from the proudest centre spike ---
-		var spike_len := 0.030
+		# --- main plank, tilted to rise toward the FRONT so balls landing
+		# on it roll BACK toward the top mouths (self-loading) ---
+		var plat := CollisionShape3D.new()
+		var pshape := BoxShape3D.new()
+		pshape.size = Vector3(w, 0.014, depth * 0.95)
+		plat.shape = pshape
+		plat.position = Vector3(0.0, 0.019, 0.0)
+		plat.rotation.x = 0.07
+		fan.add_child(plat)
+		var pmi := MeshInstance3D.new()
+		var pmesh := BoxMesh.new()
+		pmesh.size = pshape.size
+		pmi.mesh = pmesh
+		pmi.material_override = maple
+		pmi.position = plat.position
+		pmi.rotation = plat.rotation
+		fan.add_child(pmi)
+		# --- groove divider walls between the gaps (light maple ridges that
+		# make the dark recessed channels READ as grooves) ---
+		var div_h := 0.012
+		var div_t: float = FAN_BLADE[bi] * 0.7
 		for i in range(g + 1):
-			var fx := -half_w + (float(i) / float(g)) * w
-			var arc := 1.0 - pow(fx / half_w, 2.0)
-			var sz := -depth * 0.5 + (1.0 - arc) * depth * 0.55
-			var roof_h := 0.012 + ridge_h * (1.0 - absf(fx) / half_w) \
-				+ back_h * clampf((sz + depth * 0.5) / depth, 0.0, 1.0)
-			var sp := CollisionShape3D.new()
+			var dx := -half_w + float(i) * (w / float(g))
+			var dcs := CollisionShape3D.new()
+			var dshape := BoxShape3D.new()
+			dshape.size = Vector3(div_t, div_h, depth * 0.8)
+			dcs.shape = dshape
+			dcs.position = Vector3(dx, 0.026 + div_h * 0.5, 0.0)
+			dcs.rotation.x = 0.07
+			fan.add_child(dcs)
+			var dmi := MeshInstance3D.new()
+			var dmesh := BoxMesh.new()
+			dmesh.size = dshape.size
+			dmi.mesh = dmesh
+			dmi.material_override = wood
+			dmi.position = dcs.position
+			dmi.rotation = dcs.rotation
+			fan.add_child(dmi)
+		# --- spike comb at the TOP mouths: prominent pale-oak pins
+		# flanking every gap entrance (one per divider) ---
+		var spike_len := 0.045
+		for i in range(g + 1):
+			var sx := -half_w + float(i) * (w / float(g))
+			var scs := CollisionShape3D.new()
 			var scShape := CylinderShape3D.new()
-			scShape.radius = 0.005
+			scShape.radius = 0.008
 			scShape.height = spike_len
-			sp.shape = scShape
-			sp.position = Vector3(fx, roof_h + spike_len * 0.5 - 0.003, sz)
-			fan.add_child(sp)
+			scs.shape = scShape
+			scs.position = Vector3(sx, 0.026 + spike_len * 0.5, depth * 0.38)
+			fan.add_child(scs)
 			var smi := MeshInstance3D.new()
 			var scm := CylinderMesh.new()
-			scm.top_radius = 0.0045
-			scm.bottom_radius = 0.0055
+			scm.top_radius = 0.0065
+			scm.bottom_radius = 0.008
 			scm.height = spike_len
 			smi.mesh = scm
-			smi.material_override = _brass_material()
-			smi.position = sp.position
+			smi.material_override = oak
+			smi.position = scs.position
 			fan.add_child(smi)
-		# --- back wall: the flat edge balls finally rest against ---
+		# --- FRONT wall (toward the thrower): stops balls that entered
+		# from the top and rolled down the groove ---
 		var wcs := CollisionShape3D.new()
 		var wshape := BoxShape3D.new()
-		wshape.size = Vector3(w, 0.030, 0.012)
+		wshape.size = Vector3(w, 0.034, 0.014)
 		wcs.shape = wshape
-		wcs.position = Vector3(0.0, 0.015, depth * 0.5)
+		wcs.position = Vector3(0.0, 0.017, -depth * 0.46)
 		fan.add_child(wcs)
 		var wmesh := MeshInstance3D.new()
 		var wbmm := BoxMesh.new()
@@ -500,52 +517,49 @@ func _build_astrolabes() -> void:
 		wmesh.position = wcs.position
 		fan.add_child(wmesh)
 		add_child(fan)
-		# --- per-gap: capture area + claim-glow floor + mouth letter ---
+		# --- per-gap: capture area over the groove channel + dark claim-glow
+		# floor + letter at the TOP mouth ---
 		for si in range(g):
 			var fx0 := -half_w + (float(si) / float(g)) * w
 			var fx1 := -half_w + (float(si + 1) / float(g)) * w
 			var gx := (fx0 + fx1) * 0.5
-			var arc0 := 1.0 - pow(fx0 / half_w, 2.0)
-			var arc1 := 1.0 - pow(fx1 / half_w, 2.0)
-			var gz := -depth * 0.5 + (1.0 - (arc0 + arc1) * 0.5) * depth * 0.55 + depth * 0.2
-			var roof_h := 0.012 + ridge_h * (1.0 - absf(gx) / half_w) \
-				+ back_h * clampf((gz + depth * 0.5) / depth, 0.0, 1.0)
+			var gz := depth * 0.14
 			var area := Area3D.new()
 			var cs := CollisionShape3D.new()
 			var sb := BoxShape3D.new()
-			sb.size = Vector3(m * 0.9, 0.06, depth * 0.7)
+			sb.size = Vector3(m * 0.9, 0.055, depth * 0.75)
 			cs.shape = sb
 			area.add_child(cs)
-			area.position = Vector3(gx, 0.03, gz)
+			area.position = Vector3(gx, 0.035, gz)
 			area.collision_layer = 0
 			area.collision_mask = 2
 			area.monitoring = true
 			fan.add_child(area)
-			# dark claim-glow strip lying on the plank between the spikes
+			# dark claim-glow strip recessed in the groove channel
 			var cup_mat := StandardMaterial3D.new()
-			cup_mat.albedo_color = Color(0.05, 0.05, 0.06)
+			cup_mat.albedo_color = Color(0.07, 0.06, 0.05)
 			cup_mat.roughness = 0.85
 			var slit_floor := MeshInstance3D.new()
 			var sfm := BoxMesh.new()
-			sfm.size = Vector3(m * 0.8, 0.004, depth * 0.5)
+			sfm.size = Vector3(m * 0.8, 0.004, depth * 0.55)
 			slit_floor.mesh = sfm
 			slit_floor.material_override = cup_mat
-			slit_floor.position = Vector3(gx, roof_h + 0.006, gz)
+			slit_floor.position = Vector3(gx, 0.028, gz)
 			fan.add_child(slit_floor)
-			# letter etched at the slit mouth (A at the centre, outward B, C..)
+			# letter etched at the TOP mouth (A at the centre, outward B, C..)
 			var letter_idx := clampi(int(absf(float(si) - float(g - 1) * 0.5)), 0, 5)
 			var llbl := Label3D.new()
 			llbl.text = "ABCDEF".substr(letter_idx, 1)
-			llbl.modulate = Color(0.85, 0.83, 0.78)
+			llbl.modulate = Color(0.35, 0.28, 0.18)
 			llbl.font_size = 40
 			llbl.pixel_size = 0.0006
 			llbl.outline_size = 0
 			llbl.rotation_degrees = Vector3(-84.0, 0.0, 0.0)
-			llbl.position = Vector3(gx, roof_h + 0.004, -depth * 0.5 - 0.024)
+			llbl.position = Vector3(gx, 0.040, depth * 0.5 + 0.022)
 			fan.add_child(llbl)
 			slots.append({"band": bi, "col": si, "area": area, "color": "",
 				"cup": cup_mat})
-		# point value painted on the marble just past the fan's back wall
+		# point value painted on the marble in FRONT of the fan (thrower side)
 		var lbl := Label3D.new()
 		lbl.text = str(FAN_POINTS[bi])
 		lbl.modulate = Color(0.78, 0.16, 0.14)
@@ -553,7 +567,7 @@ func _build_astrolabes() -> void:
 		lbl.pixel_size = 0.0006
 		lbl.outline_size = 0
 		lbl.rotation_degrees = Vector3(-84.0, 0.0, 0.0)
-		lbl.position = Vector3(0.0, sy + 0.004, cz + depth * 0.5 + 0.030)
+		lbl.position = Vector3(0.0, sy + 0.004, cz - depth * 0.5 - 0.034)
 		add_child(lbl)
 
 
@@ -634,10 +648,10 @@ func _build_tray() -> void:
 	# Tall catch volume: overpowered balls cross the gutter line while still
 	# AIRBORNE (sweep: y up to 0.66) - the volume must reach up to ~0.85 so
 	# the claim fires wherever the ball dies in the channel.
-	gb.size = Vector3(1.34, 1.30, 0.95)
+	gb.size = Vector3(1.34, 1.30, 0.85)
 	gs.shape = gb
 	gutter.add_child(gs)
-	gutter.position = Vector3(0.0, 0.20, 2.975)
+	gutter.position = Vector3(0.0, 0.20, 3.075)
 	gutter.collision_layer = 0
 	gutter.collision_mask = 2
 	gutter.monitoring = true
@@ -729,7 +743,7 @@ func _physics_process(_delta: float) -> void:
 		# (sweep: y up to 0.66) - resolving it there froze the ball mid-wall.
 		# Altitude gate: flying balls keep flying into the trench and are
 		# claimed the moment they land (or die) inside the gutter volume.
-		if bb.position.z > 2.5:
+		if bb.position.z > 2.7:
 			if bb.position.y < 0.10 or bb.linear_velocity.length() < 0.05:
 				_resolve_ball(t)
 			else:

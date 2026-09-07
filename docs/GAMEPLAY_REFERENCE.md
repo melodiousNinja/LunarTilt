@@ -48,10 +48,10 @@ the throw happens from the LOWER HALF of the screen/table:
 
 ## 3. Ball behaviour (physics truth, everything persists)
 
-- A tossed ball rolls up the slope, decelerates under real gravity
-  (g*sin 4.99), and either:
-  - drops into a gap between two spikes and is caught (wood friction +
-    the back wall hold it against the slope), OR
+- A tossed ball lands ON or BEYOND a fan, then rolls BACK down the slope
+  and drops into a gap FROM THE TOP (the up-slope side - the owner's
+  explicit rule: "the ball should always enter from the top"). The gap's
+  front wall (toward the thrower) stops it. OR:
   - clips a spike and DEFLECTS (real rigid-body bounce), OR
   - loses momentum short of the fans / on the marble and ROLLS BACK DOWN
     to the thrower (Returned-Ball rule: the ball comes back to hand and the
