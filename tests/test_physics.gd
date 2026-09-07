@@ -47,8 +47,8 @@ func _run() -> void:
 		max_z = maxf(max_z, ball.position.z)
 	print("SHOT soft peak_z=%.3f min_y=%.4f" % [max_z, min_y])
 	_expect(min_y >= min_expected, "ball never tunnels below the board (min_y %.3f)" % min_y)
-	_expect(max_z < 1.2,
-		"soft toss is blocked by the raised Venus plate (peak z %.2f < 1.2)" % max_z)
+	_expect(max_z < 1.35,
+		"soft toss dies at the Venus mouth and rolls back (peak z %.2f < 1.35)" % max_z)
 	_expect(max_z <= 2.9, "shot never clears the far rail (peak z <= 2.9)")
 	_expect(ball.freeze, "soft toss resolves (rolled back and was re-racked)")
 	ball.queue_free()

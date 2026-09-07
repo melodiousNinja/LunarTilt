@@ -39,7 +39,7 @@ var hud_root: Control
 
 # Camera + broadcast juice
 const CAM_FOV := 62.0
-const LOOK_TARGET := Vector3(0.0, 0.02, 0.98)
+const LOOK_TARGET := Vector3(0.0, 0.02, 1.32)
 var _camera_base_fov := CAM_FOV
 var _vignette: ColorRect
 var _msg_tween: Tween = null

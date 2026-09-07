@@ -24,3 +24,6 @@ Thumbs.db
 .vscode/*
 !.vscode/launch.json
 *.log
+
+# large local reference videos
+docs/*.mp4

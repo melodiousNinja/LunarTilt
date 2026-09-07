@@ -35,7 +35,10 @@ const RAIL_H_TOTAL := 0.30
 const RAIL_TOP_Y := -0.03 + RAIL_H_TOTAL * 0.5
 
 const SLOTS_PER_POS := 7              # deprecated alias (band 0 slit count)
-const POS_Z := [0.75, 1.45, 2.15]     # astrolabe fan centres (near..far)
+const POS_Z := [1.35, 1.75, 2.15]     # astrolabe fan centres - CLUSTERED in
+                                      # the upper half per the reference video
+                                      # (long open run-up from the throw line,
+                                      # small gaps between the three fans)
 const MEDAL_R := 0.155                # deprecated alias
 const CLUSTER_R := 0.096              # deprecated alias
 const SOCKET_R := 0.037               # deprecated alias (ball r = 0.030)
