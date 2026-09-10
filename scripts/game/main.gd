@@ -72,7 +72,7 @@ func _ready() -> void:
 		world.spawn_hand_ball("red")
 		world.spawn_hand_ball("black")
 	_give_active_ball()
-	print("SCB_MAIN_VERSION=v16-tablescb-20260908 SLING_K=%s HOP_K=%s serve=%s" % [
+	print("SCB_MAIN_VERSION=v17-realgame-20260911 SLING_K=%s HOP_K=%s serve=%s" % [
 		SLING_K, HOP_K, (active_ball.position if active_ball != null else Vector3.INF)])
 
 
