@@ -39,7 +39,7 @@ var hud_root: Control
 
 # Camera + broadcast juice
 const CAM_FOV := 62.0
-const LOOK_TARGET := Vector3(0.0, 0.02, 1.32)
+const LOOK_TARGET := Vector3(0.0, 0.02, 1.95)
 var _camera_base_fov := CAM_FOV
 var _vignette: ColorRect
 var _msg_tween: Tween = null
@@ -72,7 +72,7 @@ func _ready() -> void:
 		world.spawn_hand_ball("red")
 		world.spawn_hand_ball("black")
 	_give_active_ball()
-	print("SCB_MAIN_VERSION=v151-topentry-20260907 SLING_K=%s HOP_K=%s serve=%s" % [
+	print("SCB_MAIN_VERSION=v16-tablescb-20260908 SLING_K=%s HOP_K=%s serve=%s" % [
 		SLING_K, HOP_K, (active_ball.position if active_ball != null else Vector3.INF)])
 
 
@@ -190,7 +190,8 @@ const _BALL_GRAB_PX := 150.0
 
 ## Slide-to-aim (live feedback): touching the felt instead of the ball slides
 ## the serve marker left/right along the launch line, so the player sets the
-## shot origin before pulling back. Clamped to the felt width (Â±0.52).
+## shot origin before pulling back. Clamped to the felt width (+/-0.78, wide
+## table 2026-09-08).
 func _slide_marker(screen_pos: Vector2) -> void:
 	if active_ball == null or not is_instance_valid(active_ball) or cam == null:
 		return
@@ -199,7 +200,7 @@ func _slide_marker(screen_pos: Vector2) -> void:
 		cam.project_ray_normal(screen_pos))
 	if hit != null:
 		var p: Vector3 = hit
-		var nx := clampf(p.x, -0.52, 0.52)
+		var nx := clampf(p.x, -0.78, 0.78)
 		active_ball.position = Vector3(nx,
 			world.ball_rest_y(nx, world.LAUNCH_Z), world.LAUNCH_Z)
 		print("SCB slide marker x=%.2f" % nx)
@@ -226,7 +227,7 @@ func _draw_trajectory(start: Vector3, angle: float, power: float) -> void:
 		child.queue_free()
 	var z := clampf(ShotMath.landing_z(power, angle), ShotMath.PLAY_LINE_Z, ShotMath.FAR_GUTTER_Z)
 	var x := ShotMath.lateral_drift(power, angle)
-	x = clampf(x, -0.42, 0.42)
+	x = clampf(x, -0.65, 0.65)
 	var land := Vector3(x, world.surface_y_at(x, z) + 0.004, z)
 	# 2026-09 live feedback: players want a SMALL aim line, not a full-path
 	# arc. Three subtle segments straight out of the ball show direction; the

@@ -38,10 +38,10 @@ func _run() -> void:
 	var pts: Array = TableWorldScript.frame_points()
 	for pt: Vector3 in pts:
 		_expect(pt.x >= -1.0 and pt.x <= 1.0, "frame x in range: %s" % pt)
-		_expect(pt.z >= -0.3 and pt.z <= 3.05, "frame z in range: %s" % pt)
+		_expect(pt.z >= -0.55 and pt.z <= 4.2, "frame z in range: %s" % pt)
 		_expect(pt.y >= -0.1 and pt.y <= 0.25, "frame y in range: %s" % pt)
 
-	# --- C. Hand-ball racks: spaced, on correct sides, 12 per color ---
+	# --- C. Hand-ball ammo row: spaced, correct sides, 12 per color ---
 	var red0: Vector3 = TableWorldScript.rack_spot("red", 0)
 	var red11: Vector3 = TableWorldScript.rack_spot("red", 11)
 	_expect(red0.x < 0.0, "red rack sits on player's left (x=%.2f)" % red0.x)

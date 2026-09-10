@@ -11,17 +11,16 @@ extends RefCounted
 const DECEL := 0.85
 const PLAY_LINE_Z := 0.35
 
-## Slot band center Z (closest..furthest) - the REAL astrolabe medallion
-## centres from table_world.POS_Z (v5 factory layout). The old values
-## [0.62, 1.10, 1.58] were stale v3 lane geometry and pointed the landing
-## marker at bare felt.
-const SLOT_Z := [0.75, 1.45, 2.15]
+## Slot band center Z (closest..furthest) - MUST match table_world.POS_Z
+## exactly (2026-09-08: these had drifted out of sync with the real table
+## geometry, pointing the landing marker and the AI's aim at bare felt).
+const SLOT_Z := [1.80, 2.80, 3.80]
 ## Slot capture half-depth (z): a ball stopping within +/- of center is caught.
 const SLOT_HALF_DEPTH := 0.10
 
 ## Max reasonable shot power before the ball definitely gutters.
 const GUTTER_POWER := 3.4
-const FAR_GUTTER_Z := 2.38
+const FAR_GUTTER_Z := 4.15   # matches table_world.GUTTER_ALTITUDE_Z
 
 ## Vertical fraction of launch power for the factory-spec parabolic toss onto
 ## the raised star plates. SINGLE SOURCE OF TRUTH: main._release_shot, the
@@ -63,7 +62,7 @@ static func lands_in_slot(pi: int, power: float, angle: float) -> bool:
 	var z := landing_z(power, angle)
 	var rng := slot_capture_z_range(pi)
 	var x := lateral_drift(power, angle)
-	return z >= rng.x and z <= rng.y and absf(x) < 0.46
+	return z >= rng.x and z <= rng.y and absf(x) < 0.70
 
 
 static func will_gutter(power: float, angle: float) -> bool:

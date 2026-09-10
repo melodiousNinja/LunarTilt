@@ -57,7 +57,17 @@ func _synth(name: String) -> AudioStreamWAV:
 				var env := exp(-3.2 * t)
 				v = (sin(TAU * 880.0 * t) + 0.7 * sin(TAU * 1320.0 * t)) * 0.42 * env
 			"pop":
-				v = sin(TAU * (420.0 + 900.0 * u) * t) * 0.85 * exp(-30.0 * t)
+				# Solid wood/resin ball knock (2026-09-08: the previous version
+				# read as "plastic" - too much thin high-frequency noise, not
+				# enough body). Modeled like a billiard-ball clack (8 Ball
+				# Pool reference): a low-mid resonant BODY carries the
+				# "solid" weight, a brief noise transient gives the attack,
+				# and a touch of higher ring gives the knock its edge -
+				# body dominates so it never reads as a hollow click.
+				var body := (sin(TAU * 480.0 * t) * 0.5 + sin(TAU * 720.0 * t) * 0.35) * exp(-60.0 * t)
+				var click := (randf() * 2.0 - 1.0) * 0.30 * exp(-450.0 * t)
+				var ring := sin(TAU * 1400.0 * t) * 0.22 * exp(-80.0 * t)
+				v = body + click + ring
 			"block":
 				v = signf(sin(TAU * 140.0 * t)) * 0.30 * exp(-9.0 * t)
 			"thud":

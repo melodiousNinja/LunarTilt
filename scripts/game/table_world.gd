@@ -24,20 +24,34 @@ signal ball_returned(ball: SCBBall)
 signal ball_displaced(ball: SCBBall)
 signal ball_grouped(ball: SCBBall)
 
-const TABLE_LEN := 2.9      # Z axis (player end at Z=0, far end at Z=2.9)
-const TABLE_WID := 1.2      # X axis
+const TABLE_LEN := 4.35     # Z axis (player end at Z=0, far end at Z=4.35)
+const TABLE_WID := 1.8      # X axis
 const TILT_DEG := 4.99
 const BOARD_THICK := 0.06
 const RAIL_T := 0.04
 ## Full height of the rail backstops (physics bodies).
 const RAIL_H_TOTAL := 0.30
-## World Y of the top face of the side rails (hand-ball racks rest on these).
+## World Y of the top face of the side rails.
 const RAIL_TOP_Y := -0.03 + RAIL_H_TOTAL * 0.5
+## Gutter/trench geometry, all expressed relative to TABLE_LEN/TABLE_WID so
+## the deep-end catch zone always sits just past the far rail regardless of
+## table size (kept the exact old offsets: these formulas reproduce the
+## original literals 2.7/3.5/2.6/3.4/3.075/2.95/3.48 at TABLE_LEN=2.9).
+const GUTTER_ALTITUDE_Z := TABLE_LEN - 0.2
+const ESCAPE_Z := TABLE_LEN + 0.6
+const GUTTER_CLAMP_MIN_Z := TABLE_LEN - 0.3
+const GUTTER_CLAMP_MAX_Z := TABLE_LEN + 0.5
+const GUTTER_AREA_Z := TABLE_LEN + 0.175
+const TRENCH_Z := TABLE_LEN + 0.05
+const TRENCH_BACK_Z := TABLE_LEN + 0.58
+const GUTTER_X_HALF := TABLE_WID * 0.5 + 0.05
+const GUTTER_FULL_W := TABLE_WID + 0.14
 
 const SLOTS_PER_POS := 7              # deprecated alias (band 0 slit count)
-const POS_Z := [1.45, 1.95, 2.45]     # astrolabe fan centres - spaced for
-                                      # playability (0.5 m between fans) with
-                                      # the long run-up kept (v15.1)
+## 2026-09-08 user rule: even more room between fans - gaps widened again
+## from 0.75 m to 1.0 m between fan centres, and the table lengthened to
+## keep the far fan a healthy 0.55 m clear of the far rail.
+const POS_Z := [1.80, 2.80, 3.80]     # astrolabe fan centres
 const MEDAL_R := 0.155                # deprecated alias
 const CLUSTER_R := 0.096              # deprecated alias
 const SOCKET_R := 0.037               # deprecated alias (ball r = 0.030)
@@ -54,6 +68,10 @@ const FAN_MOUTH := [0.070, 0.078, 0.090]   # slit width at the mouth (ball dia 0
 const FAN_BLADE := [0.026, 0.032, 0.042]   # solid wood between slits
 const FAN_DEPTH := [0.22, 0.24, 0.26]      # mouth-to-front-wall depth
 const FAN_H := 0.016                       # platform height above the marble
+## Connector height tiers (2026-09-08 close-up reference): a discrete step
+## per letter group - A (centre) tallest, then B, then C, then D at the
+## outer edges - not a smooth continuous gradient.
+const PEG_H_TIERS := [0.045, 0.037, 0.029, 0.021]
 const PLATE_H := 0.010
 const PLATE_NAMES := ["ONE", "TWO", "THREE"]
 const POCKET_X_HALF := 0.60             # playable half-width the bands span
@@ -62,11 +80,13 @@ const LAUNCH_Z := 0.22                # ball spawn behind the play line
 
 const BALLS_PER_COLOR := 12
 
-# --- Hand-ball racks (visual side channels, player end) ---
-const RACK_X_CENTER := 0.72        # channel center X per side (on the rail tops)
-const RACK_W := 0.30               # channel width (X)
-const RACK_D := 0.60               # channel depth (Z)
-const RACK_Z_START := 0.02
+# --- Hand-ball ammo (2026-09-08 user rule: stack the spare balls in a
+# horizontal row at the bottom of the table, behind the tray, instead of in
+# vertical channels beside the table - that freed up the side space used to
+# widen the playable board). ---
+const AMMO_ROW_Z := -0.38          # Z of the ammo shelf row (behind the tray)
+const AMMO_GAP_X := 0.06           # gap from centerline to the first ball
+const AMMO_SHELF_TOP_Y := -0.13    # shelf top height (matches the tray floor)
 const RACK_PITCH := 0.048          # (60 mm ball + 12 mm gap)
 
 ## A ball that has slowed below this while inside a scoring pocket is caught.
@@ -124,20 +144,23 @@ func ball_rest_y(x: float, z: float) -> float:
 
 # ------------------------------------------------------------- pure layout --
 
-static func rack_x(color: String) -> float:
-	return -RACK_X_CENTER if color == "red" else RACK_X_CENTER
+## +1 for black (right of centerline), -1 for red (left of centerline).
+static func rack_side(color: String) -> float:
+	return -1.0 if color == "red" else 1.0
 
 
 static func _rack_floor_y(_x: float) -> float:
-	return RAIL_TOP_Y + 0.004
+	return AMMO_SHELF_TOP_Y + 0.004
 
 
-## World position of rack ball #index for a color. Pure math so unit tests can
-## verify spacing without constructing a physics scene.
+## World position of ammo ball #index for a color: a horizontal row behind
+## the tray (2026-09-08 user rule), red growing left from the centerline,
+## black growing right. Pure math so unit tests can verify spacing without
+## constructing a physics scene.
 static func rack_spot(color: String, index: int) -> Vector3:
-	var x := rack_x(color)
-	var z := RACK_Z_START + index * RACK_PITCH
-	return Vector3(x, _rack_floor_y(x) + SCBBall.RADIUS_M, z)
+	var side := rack_side(color)
+	var x := side * (AMMO_GAP_X + float(index) * RACK_PITCH)
+	return Vector3(x, _rack_floor_y(x) + SCBBall.RADIUS_M, AMMO_ROW_Z)
 
 
 ## Width of fan `bi`: (G+1) blades + G slit mouths.
@@ -157,15 +180,15 @@ static func socket_pos(bi: int, si: int) -> Vector3:
 	return Vector3(gx, 0.0, cz)
 
 
-## 8 corners of the visual frame we care about (racks + tray + table + gutter).
+## 8 corners of the visual frame we care about (table + ammo shelf + gutter).
 static func frame_points() -> Array:
 	var pts: Array = []
-	# v6 (2026-09 live feedback "table is so small"): frame the BOARD, not the
-	# board + side racks. The racks sit on the rail tops off the play area;
-	# including them ate ~40% of the portrait width. x half-extent is now the
-	# playable width + rails (0.60 + 0.10), z spans tray to past the far rail.
-	for x in [-0.70, 0.70]:
-		for z in [-0.26, 2.55]:
+	# v7 (2026-09-08 user rule: racks moved off the sides onto a horizontal
+	# ammo shelf behind the tray, and the board itself got wider/longer).
+	# x half-extent is the playable width + rails; z spans the ammo shelf to
+	# just past the far fan.
+	for x in [-(TABLE_WID * 0.5 + 0.10), TABLE_WID * 0.5 + 0.10]:
+		for z in [-0.50, POS_Z[2] + 0.35]:
 			for y in [-0.06, 0.16]:
 				pts.append(Vector3(x, y, z))
 	return pts
@@ -192,21 +215,33 @@ func _wood_material() -> StandardMaterial3D:
 	return mat
 
 
-## Factory-spec playing surface: polished white marble with wandering
-## grey-blue veins (the real YoTyan table is marble). Procedural shader, so
-## it stays crisp at any resolution and needs no texture assets.
+## Selectable table surface skins (2026-09-07 user rule: default look must
+## match the real broadcast table - a bright white/cream glossy surface, not
+## dark stone). "dark_marble" keeps the earlier broadcast-slate alt look for
+## players who want a cosmetic swap later; it is not the default.
+const SURFACE_SKINS := {
+	"cream": {
+		"body": Color(0.93, 0.91, 0.86), "vein": Color(0.82, 0.79, 0.72),
+		"rough_min": 0.18, "rough_max": 0.34,
+	},
+	"dark_marble": {
+		"body": Color(0.21, 0.24, 0.27), "vein": Color(0.13, 0.40, 0.38),
+		"rough_min": 0.34, "rough_max": 0.55,
+	},
+}
+var surface_skin := "cream"
+
+## Factory-spec playing surface: procedural shader (no texture assets needed)
+## so any skin stays crisp at any resolution.
 func _surface_material() -> ShaderMaterial:
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/marble.gdshader")
-	# Modern broadcast palette: deep slate body with teal veining (player and
-	# ball colours pop against it; brass lines read as inlays).
+	var skin: Dictionary = SURFACE_SKINS.get(surface_skin, SURFACE_SKINS["cream"])
 	mat.set_shader_parameter("vein_scale", 4.0)
-	# Satin stone, not mirror: at the camera's grazing angle a low-roughness
-	# surface Fresnel-reflects the bright sky and washes the body out to white.
-	mat.set_shader_parameter("body_col", Color(0.21, 0.24, 0.27))
-	mat.set_shader_parameter("vein_col", Color(0.13, 0.40, 0.38))
-	mat.set_shader_parameter("rough_min", 0.34)
-	mat.set_shader_parameter("rough_max", 0.55)
+	mat.set_shader_parameter("body_col", skin["body"])
+	mat.set_shader_parameter("vein_col", skin["vein"])
+	mat.set_shader_parameter("rough_min", skin["rough_min"])
+	mat.set_shader_parameter("rough_max", skin["rough_max"])
 	return mat
 
 
@@ -224,17 +259,6 @@ func _leg(vx: float, vz: float) -> MeshInstance3D:
 	mi.material_override = mat
 	var top_y := surface_y_at(vx, vz) - 0.055
 	mi.position = Vector3(vx, top_y - 0.0775, vz)
-	return mi
-
-
-## Visible rail cap laid on top of each side rail (visual shelf for the racks).
-func _rail_cap(side: float) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.07, 0.008, TABLE_LEN)
-	mi.mesh = bm
-	mi.material_override = _wood_material()
-	mi.position = Vector3(side * (TABLE_WID / 2.0 + RAIL_T / 2.0), RAIL_TOP_Y + 0.004, TABLE_LEN / 2.0)
 	return mi
 
 
@@ -307,8 +331,8 @@ func build() -> void:
 	foul.rotation.x = board.rotation.x
 	add_child(foul)
 
-	for lx in [-0.46, 0.46]:
-		for lz in [0.32, 0.95, 1.88]:
+	for lx in [-(TABLE_WID * 0.5 - 0.14), TABLE_WID * 0.5 - 0.14]:
+		for lz in [0.45, 2.15, 3.85]:
 			add_child(_leg(lx, lz))
 
 	# --- Rails (tall backstops + wood visuals) ---
@@ -336,10 +360,6 @@ func build() -> void:
 		rail_mesh.position = r.pos
 		add_child(rail_mesh)
 
-	# --- Rail caps (shelves that carry the hand-ball racks) ---
-	add_child(_rail_cap(-1.0))
-	add_child(_rail_cap(1.0))
-
 	# --- Front tray (the Returned-Ball rule needs a place to land!) ---
 	# LIVE-PROVEN (2026-09 device + bisect): _tray_zone/_tray_floor were
 	# declared but NEVER built, so every ball that rolled back off the player
@@ -347,6 +367,10 @@ func build() -> void:
 	# slope while the player aims and vanishes the same way - the "invisible
 	# ball" report. The tray gives returned balls a physical home.
 	_build_tray()
+	# --- Ammo shelf (2026-09-08 user rule): the spare-ball racks moved off
+	# the sides onto a horizontal shelf behind the tray, freeing the side
+	# space used above to widen the board.
+	_build_ammo_shelf()
 
 	# --- Scoring sockets: three brass astrolabe medallions (THE factory look) ---
 	_build_astrolabes()
@@ -410,7 +434,6 @@ func _half_disc_mesh(radius: float, thick: float) -> ArrayMesh:
 ## top mouths. Light maple wood + dark recessed gap channels so the grooves
 ## READ, and a prominent spike comb flanking every mouth.
 func _build_astrolabes() -> void:
-	var wood := _wood_material()
 	for bi in range(POS_Z.size()):
 		var cz: float = POS_Z[bi]
 		var g: int = FAN_GAPS[bi]
@@ -419,13 +442,18 @@ func _build_astrolabes() -> void:
 		var half_w := fan_width(bi) * 0.5
 		var w := half_w * 2.0
 		var sy: float = surface_y_at(0.0, cz)
-		# light maple hardware (the close-up's pale fans - dark grooves pop)
+		# Dark charcoal matte hardware (TableSCB.com reference photo: a solid
+		# graphite-grey plate, not pale wood) - same tone for the plank, base
+		# disc and connectors so the whole astrolabe reads as one clean piece.
 		var maple := StandardMaterial3D.new()
-		maple.albedo_color = Color(0.82, 0.74, 0.56)
-		maple.roughness = 0.5
+		maple.albedo_color = Color(0.16, 0.16, 0.17)
+		maple.roughness = 0.8
+		# wooden connectors between slots - same charcoal tone, not a separate
+		# lighter wood (2026-09-08 user rule: "regular solid wood, clean and
+		# classy", not a contrasting accent color).
 		var oak := StandardMaterial3D.new()
-		oak.albedo_color = Color(0.88, 0.80, 0.62)
-		oak.roughness = 0.45
+		oak.albedo_color = Color(0.14, 0.14, 0.15)
+		oak.roughness = 0.8
 		# one physics body per fan, tilted with the board
 		var fan := StaticBody3D.new()
 		fan.collision_layer = 1
@@ -434,8 +462,8 @@ func _build_astrolabes() -> void:
 		fan.rotation.x = -deg_to_rad(TILT_DEG)
 		# --- semi-circular base plank (the bowl) ---
 		var bmat := StandardMaterial3D.new()
-		bmat.albedo_color = Color(0.74, 0.64, 0.47)
-		bmat.roughness = 0.55
+		bmat.albedo_color = Color(0.155, 0.155, 0.165)
+		bmat.roughness = 0.8
 		bmat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		var base_mi := MeshInstance3D.new()
 		base_mi.mesh = _half_disc_mesh(half_w, 0.012)
@@ -459,10 +487,13 @@ func _build_astrolabes() -> void:
 		pmi.position = plat.position
 		pmi.rotation = plat.rotation
 		fan.add_child(pmi)
-		# --- groove divider walls between the gaps (light maple ridges that
-		# make the dark recessed channels READ as grooves) ---
+		# --- wooden connectors between the gaps (2026-09-08 close-up reference:
+		# these are solid rectangular wood connectors, not round pegs, stepped
+		# in height by letter group - the connectors flanking slot A are
+		# tallest, then the B pair, then C, then D at the outer edges). ---
 		var div_h := 0.012
 		var div_t: float = FAN_BLADE[bi] * 0.7
+		var center_i := float(g) * 0.5
 		for i in range(g + 1):
 			var dx := -half_w + float(i) * (w / float(g))
 			var dcs := CollisionShape3D.new()
@@ -472,35 +503,16 @@ func _build_astrolabes() -> void:
 			dcs.position = Vector3(dx, 0.026 + div_h * 0.5, 0.0)
 			dcs.rotation.x = 0.07
 			fan.add_child(dcs)
+			var tier := int(floor(absf(float(i) - center_i)))
+			var peg_h: float = PEG_H_TIERS[clampi(tier, 0, PEG_H_TIERS.size() - 1)]
 			var dmi := MeshInstance3D.new()
 			var dmesh := BoxMesh.new()
-			dmesh.size = dshape.size
+			dmesh.size = Vector3(div_t, peg_h, depth * 0.8)
 			dmi.mesh = dmesh
-			dmi.material_override = wood
-			dmi.position = dcs.position
+			dmi.material_override = oak
+			dmi.position = Vector3(dx, 0.026 + peg_h * 0.5, 0.0)
 			dmi.rotation = dcs.rotation
 			fan.add_child(dmi)
-		# --- spike comb at the TOP mouths: prominent pale-oak pins
-		# flanking every gap entrance (one per divider) ---
-		var spike_len := 0.045
-		for i in range(g + 1):
-			var sx := -half_w + float(i) * (w / float(g))
-			var scs := CollisionShape3D.new()
-			var scShape := CylinderShape3D.new()
-			scShape.radius = 0.008
-			scShape.height = spike_len
-			scs.shape = scShape
-			scs.position = Vector3(sx, 0.026 + spike_len * 0.5, depth * 0.38)
-			fan.add_child(scs)
-			var smi := MeshInstance3D.new()
-			var scm := CylinderMesh.new()
-			scm.top_radius = 0.0065
-			scm.bottom_radius = 0.008
-			scm.height = spike_len
-			smi.mesh = scm
-			smi.material_override = oak
-			smi.position = scs.position
-			fan.add_child(smi)
 		# --- FRONT wall (toward the thrower): stops balls that entered
 		# from the top and rolled down the groove ---
 		var wcs := CollisionShape3D.new()
@@ -513,7 +525,7 @@ func _build_astrolabes() -> void:
 		var wbmm := BoxMesh.new()
 		wbmm.size = wshape.size
 		wmesh.mesh = wbmm
-		wmesh.material_override = wood
+		wmesh.material_override = oak
 		wmesh.position = wcs.position
 		fan.add_child(wmesh)
 		add_child(fan)
@@ -535,10 +547,10 @@ func _build_astrolabes() -> void:
 			area.collision_mask = 2
 			area.monitoring = true
 			fan.add_child(area)
-			# dark claim-glow strip recessed in the groove channel
+			# neutral shadowed groove floor - recolors flat (no glow) once claimed
 			var cup_mat := StandardMaterial3D.new()
-			cup_mat.albedo_color = Color(0.07, 0.06, 0.05)
-			cup_mat.roughness = 0.85
+			cup_mat.albedo_color = Color(0.10, 0.10, 0.11)
+			cup_mat.roughness = 0.8
 			var slit_floor := MeshInstance3D.new()
 			var sfm := BoxMesh.new()
 			sfm.size = Vector3(m * 0.8, 0.004, depth * 0.55)
@@ -550,7 +562,7 @@ func _build_astrolabes() -> void:
 			var letter_idx := clampi(int(absf(float(si) - float(g - 1) * 0.5)), 0, 5)
 			var llbl := Label3D.new()
 			llbl.text = "ABCDEF".substr(letter_idx, 1)
-			llbl.modulate = Color(0.35, 0.28, 0.18)
+			llbl.modulate = Color(0.82, 0.82, 0.82)
 			llbl.font_size = 40
 			llbl.pixel_size = 0.0006
 			llbl.outline_size = 0
@@ -592,6 +604,40 @@ func _build_guardlines() -> void:
 			seg.position = Vector3(x_edge, surface_y_at(x_edge, z_mid) + 0.002, z_mid)
 			seg.rotation.x = -slope
 			add_child(seg)
+
+
+## Horizontal ammo shelf (2026-09-08 user rule): the 12 spare balls per color
+## sit in a single row each, red growing left of centerline and black
+## growing right, on a shelf just behind the tray - replacing the old
+## vertical side channels so the board itself can be wider.
+func _build_ammo_shelf() -> void:
+	var wood_mat := _wood_material()
+	var half_w := AMMO_GAP_X + float(BALLS_PER_COLOR - 1) * RACK_PITCH + SCBBall.RADIUS_M + 0.03
+	var depth := 0.22
+	var bodies := [
+		{"size": Vector3(half_w * 2.0, 0.04, depth), "pos": Vector3(0.0, AMMO_SHELF_TOP_Y - 0.02, AMMO_ROW_Z)},
+		{"size": Vector3(half_w * 2.0, 0.08, 0.02), "pos": Vector3(0.0, AMMO_SHELF_TOP_Y + 0.02, AMMO_ROW_Z - depth * 0.5)},
+	]
+	for r in bodies:
+		var st := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var rb := BoxShape3D.new()
+		rb.size = r.size
+		cs.shape = rb
+		st.add_child(cs)
+		st.position = r.pos
+		st.collision_layer = 1
+		st.collision_mask = 2
+		add_child(st)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = r.size
+		mi.mesh = bm
+		mi.material_override = wood_mat
+		mi.position = r.pos
+		add_child(mi)
+
+
 ## The player-end tray: returned balls land here and are re-racked.
 ## Floor top at y=-0.13 (the height test A's comment always assumed), walls
 ## on all open sides so a returned ball rests instead of escaping.
@@ -648,10 +694,10 @@ func _build_tray() -> void:
 	# Tall catch volume: overpowered balls cross the gutter line while still
 	# AIRBORNE (sweep: y up to 0.66) - the volume must reach up to ~0.85 so
 	# the claim fires wherever the ball dies in the channel.
-	gb.size = Vector3(1.34, 1.30, 0.85)
+	gb.size = Vector3(GUTTER_FULL_W, 1.30, 0.85)
 	gs.shape = gb
 	gutter.add_child(gs)
-	gutter.position = Vector3(0.0, 0.20, 3.075)
+	gutter.position = Vector3(0.0, 0.20, GUTTER_AREA_Z)
 	gutter.collision_layer = 0
 	gutter.collision_mask = 2
 	gutter.monitoring = true
@@ -661,14 +707,16 @@ func _build_tray() -> void:
 	# (y < -0.5) where the escape guard mis-rated it as a RETURNED ball. With
 	# the trench, it visibly lands in the channel and is claimed as guttered.
 	var trench := [
-		{"size": Vector3(1.34, 0.04, 1.10), "pos": Vector3(0.0, -0.12, 2.95)},
-		# Tall backstop + high side walls: overpowered balls (sweep p=6.4)
-		# crossed the old 0.18 m wall AIRBORNE (y up to 0.66) and escaped past
-		# the world, where the escape guard mis-rated them as returned. The
-		# real table's far end is a tall wooden cabinet - match it.
-		{"size": Vector3(1.34, 1.00, 0.04), "pos": Vector3(0.0, 0.33, 3.48)},
-		{"size": Vector3(0.04, 0.60, 1.10), "pos": Vector3(-0.65, 0.18, 2.95)},
-		{"size": Vector3(0.04, 0.60, 1.10), "pos": Vector3(0.65, 0.18, 2.95)},
+		{"size": Vector3(GUTTER_FULL_W, 0.04, 1.10), "pos": Vector3(0.0, -0.12, TRENCH_Z)},
+		# Low-profile backstop + side walls (2026-09-07 user rule: no tall
+		# cabinet at the far end - the real table's far end is just an open
+		# studio wall). Height matches the side rails so it reads as a
+		# normal cushion, not a piece of furniture. Overpowered balls that
+		# clear this low wall airborne are still caught by the escape guard
+		# in _physics_process (position-based, independent of wall height).
+		{"size": Vector3(GUTTER_FULL_W, 0.32, 0.04), "pos": Vector3(0.0, 0.01, TRENCH_BACK_Z)},
+		{"size": Vector3(0.04, 0.32, 1.10), "pos": Vector3(-GUTTER_X_HALF, 0.01, TRENCH_Z)},
+		{"size": Vector3(0.04, 0.32, 1.10), "pos": Vector3(GUTTER_X_HALF, 0.01, TRENCH_Z)},
 	]
 	for r in trench:
 		var tb := StaticBody3D.new()
@@ -725,25 +773,25 @@ func _physics_process(_delta: float) -> void:
 		var bb := b as SCBBall
 		if bb.freeze:
 			continue
-		# ESCAPE GUARD FIRST: anything beyond the trench (z > 3.5), below the
+		# ESCAPE GUARD FIRST: anything beyond the trench, below the
 		# world, or way off-line is an overpowered/lost ball - snap it into
 		# the channel and claim GUTTERED. This must precede the deep-zone
-		# altitude gate, else a flyer past z=3.5 lands in that branch, finds
-		# no gutter overlap at its far position, and comes back as a bogus
-		# "returned" ball (sweep p=6.4: end=(0, 0.054, 5.26)).
-		if bb.position.z > 3.5 or bb.position.y < -0.5 or absf(bb.position.x) > 3.0:
-			bb.position.x = clampf(bb.position.x, -0.55, 0.55)
-			bb.position.z = clampf(bb.position.z, 2.60, 3.40)
+		# altitude gate, else a flyer past the trench lands in that branch,
+		# finds no gutter overlap at its far position, and comes back as a
+		# bogus "returned" ball (sweep p=6.4: end=(0, 0.054, 5.26)).
+		if bb.position.z > ESCAPE_Z or bb.position.y < -0.5 or absf(bb.position.x) > 3.0:
+			bb.position.x = clampf(bb.position.x, -GUTTER_X_HALF + 0.10, GUTTER_X_HALF - 0.10)
+			bb.position.z = clampf(bb.position.z, GUTTER_CLAMP_MIN_Z, GUTTER_CLAMP_MAX_Z)
 			bb.position.y = -0.10 + SCBBall.RADIUS_M + 0.002
 			_freeze_in_place(bb)
 			ball_guttered.emit(bb)
 			continue
-		# Deep-zone rule: anything past the last astrolabe (z > 2.5) is in the
+		# Deep-zone rule: anything past the last astrolabe is in the
 		# gutter. But an OVERPOWERED ball crosses that line while still AIRBORNE
 		# (sweep: y up to 0.66) - resolving it there froze the ball mid-wall.
 		# Altitude gate: flying balls keep flying into the trench and are
 		# claimed the moment they land (or die) inside the gutter volume.
-		if bb.position.z > 2.7:
+		if bb.position.z > GUTTER_ALTITUDE_Z:
 			if bb.position.y < 0.10 or bb.linear_velocity.length() < 0.05:
 				_resolve_ball(t)
 			else:
@@ -841,12 +889,12 @@ func _resolve_ball(t: Dictionary) -> void:
 	var is_guttered := gutter != null and gutter.overlaps_body(b)
 	if is_guttered:
 		# Snap INTO the trench channel, not onto the extrapolated felt plane:
-		# ball_rest_y() has no knowledge of the trench cut-out (z>2.55), so
-		# snapping to it froze balls floating 19 cm above the channel (sweep
-		# p=4.4: end y=0.0898). Trench floor top is y=-0.10; rest = floor +
-		# radius + lip.
-		bb.position.x = clampf(bb.position.x, -0.55, 0.55)
-		bb.position.z = clampf(bb.position.z, 2.60, 3.40)
+		# ball_rest_y() has no knowledge of the trench cut-out, so snapping
+		# to it froze balls floating 19 cm above the channel (sweep p=4.4:
+		# end y=0.0898). Trench floor top is y=-0.10; rest = floor + radius +
+		# lip.
+		bb.position.x = clampf(bb.position.x, -GUTTER_X_HALF + 0.10, GUTTER_X_HALF - 0.10)
+		bb.position.z = clampf(bb.position.z, GUTTER_CLAMP_MIN_Z, GUTTER_CLAMP_MAX_Z)
 		bb.position.y = -0.10 + SCBBall.RADIUS_M + 0.002
 		_freeze_in_place(bb)
 		ball_guttered.emit(bb)
@@ -953,13 +1001,13 @@ func _recolor_plate(sd: Dictionary, color: String) -> void:
 		return
 	var m := mat_v as StandardMaterial3D
 	if color == "":
-		m.albedo_color = Color(0.05, 0.05, 0.06)
+		m.albedo_color = Color(0.10, 0.10, 0.11)
 		m.emission_enabled = false
 	else:
-		m.albedo_color = CLAIM_GLOW[color] * 0.55
-		m.emission_enabled = true
-		m.emission = CLAIM_GLOW[color]
-		m.emission_energy_multiplier = 0.9
+		# 2026-09-08 user rule: "clean and classy", not electric - a claimed
+		# slot gets a flat solid team colour fill, no emission/glow.
+		m.albedo_color = CLAIM_GLOW[color]
+		m.emission_enabled = false
 
 
 ## Track a freshly-launched ball so the settle-detector resolves it.

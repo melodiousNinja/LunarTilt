@@ -47,8 +47,8 @@ func _run() -> void:
 		max_z = maxf(max_z, ball.position.z)
 	print("SHOT soft peak_z=%.3f min_y=%.4f" % [max_z, min_y])
 	_expect(min_y >= min_expected, "ball never tunnels below the board (min_y %.3f)" % min_y)
-	_expect(max_z < 1.35,
-		"soft toss dies at the Venus mouth and rolls back (peak z %.2f < 1.35)" % max_z)
+	_expect(max_z < 1.75,
+		"soft toss dies at the Venus mouth and rolls back (peak z %.2f < 1.75)" % max_z)
 	_expect(max_z <= 2.9, "shot never clears the far rail (peak z <= 2.9)")
 	_expect(ball.freeze, "soft toss resolves (rolled back and was re-racked)")
 	ball.queue_free()
@@ -72,7 +72,7 @@ func _run() -> void:
 		firm_peak, firm.position, firm.freeze])
 	_expect(firm_peak >= 1.4,
 		"firm toss reaches the Mars zone (peak z %.2f >= 1.4)" % firm_peak)
-	_expect(firm.freeze and firm.position.z > 1.30 and firm.position.z < 1.75,
+	_expect(firm.freeze and firm.position.z > 1.70 and firm.position.z < 2.05,
 		"firm toss drops into a groove FROM THE TOP (z %.2f)" % firm.position.z)
 	firm.queue_free()
 	for i in 5:
@@ -96,17 +96,18 @@ func _run() -> void:
 	for i in 5:
 		await physics_frame
 
-	# --- B. a settling ball is captured by a slot band ---
+	# --- B. a settling ball is captured by a groove (middle fan, top entry) ---
 	var settler := SCBBall.create("black")
 	root.add_child(settler)
-	settler.position = Vector3(0.0, world.ball_rest_y(0.0, 1.45), 1.45)
+	var sp_settle: Vector3 = world.socket_pos(1, 2)
+	settler.position = Vector3(sp_settle.x, world.ball_rest_y(sp_settle.x, sp_settle.z), sp_settle.z)
 	settler.linear_velocity = Vector3.ZERO
 	settler.angular_velocity = Vector3.ZERO
 	world.track_live(settler)
 	for i in 60:
 		await physics_frame
 	_expect(settler.freeze == true, "near-rest ball is captured by a socket (frozen)")
-	_expect(settler.position.z > 1.3 and settler.position.z < 1.6, "capture happens at the medallion")
+	_expect(settler.position.z > 2.6 and settler.position.z < 3.0, "capture happens at the Mars fan")
 	settler.queue_free()
 	for i in 5:
 		await physics_frame

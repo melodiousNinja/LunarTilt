@@ -1,3 +1,20 @@
+## 0. Agreed table layout (2026-09-08, owner decision via the Claude session)
+
+- Table: **4.35 m long × 1.8 m wide** (long + wide broadcast-style board)
+- Fans: **z = 1.80 / 2.80 / 3.80** (1.0 m between fan centres; far fan 0.55 m
+  clear of the far rail)
+- Fan hardware: **dark charcoal matte** plate + stepped wooden connectors
+  (A tallest → B → C → D, discrete tiers, not a smooth gradient) — the whole
+  astrolabe reads as one clean graphite piece
+- Surface: **cream/white glossy** (the broadcast look) by default; the dark
+  slate look remains available as a cosmetic skin
+- Spare balls: a **horizontal ammo row behind the tray** (red growing left of
+  centre, black growing right) - the side rack channels are gone, which is
+  what paid for the wider board
+- Far end: a **low cushion**, not a tall cabinet; overpowered balls are
+  still caught by the position-based escape guard
+- Claimed slots: flat solid team-colour fill, **no glow** ("clean and classy")
+
 # Gameplay Reference — Canonical Ground Truth (2026-09-06)
 
 Source: the owner's verbal spec + the close-up image + the reference video
