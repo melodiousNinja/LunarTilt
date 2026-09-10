@@ -8,8 +8,8 @@ extends RigidBody3D
 ## decelerates them up the 4.99-degree slope, and static friction
 ## (0.49 >> tan(4.99 deg) ~ 0.087) holds resting balls in place.
 
-const RADIUS_M := 0.034
-const MASS_KG := 0.005  # factory spec: 5 g chrome-steel ball
+const RADIUS_M := 0.042
+const MASS_KG := 0.010  # 10 g - scaled with the bigger 4.35 x 1.8 board
 const ROLL_DAMP := 0.05  # smooth phenolic roll; resistance comes from the
 # 5-degree slope's gravity component, not artificial braking
 
@@ -59,8 +59,11 @@ func _on_body_entered(_body: Node) -> void:
 
 func _process(_delta: float) -> void:
 	if is_active and _mat != null:
+		# v17: subtle own-colour pulse only - the old gold emission at high
+		# energy washed the ball out to WHITE on the cream table (owner bug
+		# report: "the starting ball is always white").
 		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.006)
-		_mat.emission_energy_multiplier = 0.7 + pulse * 1.5
+		_mat.emission_energy_multiplier = 0.25 + pulse * 0.25
 
 
 func _sync_emphasis() -> void:
@@ -68,7 +71,9 @@ func _sync_emphasis() -> void:
 		return
 	if is_active:
 		_mat.emission_enabled = true
-		_mat.emission = Color(1.0, 0.92, 0.5)
+		# the ball's OWN colour, gently lifted - never a white/gold wash
+		_mat.emission = _mat.albedo_color
+		_mat.emission_energy_multiplier = 0.35
 	else:
 		_mat.emission_enabled = false
 

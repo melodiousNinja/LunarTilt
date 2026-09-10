@@ -48,7 +48,7 @@ var _fov_punch := 0.0
 ## Slingshot conversion: screen px of pull -> m/s of launch velocity.
 const SLING_K := 0.0035
 const MIN_POWER := 0.8
-const GUTTER_POWER_LIMIT := 3.3
+const GUTTER_POWER_LIMIT := 4.6
 ## Vertical fraction of launch power: the factory-spec parabolic toss onto the
 ## raised star plates (single source of truth: ShotMath.HOP_K).
 const HOP_K := ShotMath.HOP_K
@@ -285,15 +285,14 @@ func _on_ball_scored(ball: SCBBall, band: int, keep_shooting: bool) -> void:
 	print("SCB SCORED color=%s band=%d pts=%d keep=%s" % [
 		ball.color, band, pts, keep_shooting])
 	scores[ball.color] = int(scores[ball.color]) + pts
-	_sfx("score")
+	# v17 REAL-GAME RULE (owner): a capture is SILENT and VISUALLY QUIET - the
+	# ball simply sits in the groove like the physical game. No colour change,
+	# no chime, no juice. The scoreboard (HUD) is the only feedback.
 	_update_hud()
-	_score_juice(ball.position, pts)
 	pending_resolve = false
 	if keep_shooting and ball.color == active_color:
-		_msg("+%d  GROUP! keep shooting" % pts)
 		_give_active_ball()
 	else:
-		_msg("+%d  %s claims a pocket" % [pts, _color_name(ball.color)])
 		_pass_turn()
 
 

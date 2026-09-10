@@ -37,11 +37,11 @@ const RAIL_TOP_Y := -0.03 + RAIL_H_TOTAL * 0.5
 ## the deep-end catch zone always sits just past the far rail regardless of
 ## table size (kept the exact old offsets: these formulas reproduce the
 ## original literals 2.7/3.5/2.6/3.4/3.075/2.95/3.48 at TABLE_LEN=2.9).
-const GUTTER_ALTITUDE_Z := TABLE_LEN - 0.2
+const GUTTER_ALTITUDE_Z := TABLE_LEN + 0.05
 const ESCAPE_Z := TABLE_LEN + 0.6
 const GUTTER_CLAMP_MIN_Z := TABLE_LEN - 0.3
 const GUTTER_CLAMP_MAX_Z := TABLE_LEN + 0.5
-const GUTTER_AREA_Z := TABLE_LEN + 0.175
+const GUTTER_AREA_Z := TABLE_LEN + 0.45
 const TRENCH_Z := TABLE_LEN + 0.05
 const TRENCH_BACK_Z := TABLE_LEN + 0.58
 const GUTTER_X_HALF := TABLE_WID * 0.5 + 0.05
@@ -64,7 +64,7 @@ const SOCKET_R := 0.037               # deprecated alias (ball r = 0.030)
 ## far 3 "B A B" (3 pt).
 const FAN_GAPS := [7, 5, 3]
 const FAN_POINTS := [1, 2, 3]
-const FAN_MOUTH := [0.070, 0.078, 0.090]   # slit width at the mouth (ball dia 0.060)
+const FAN_MOUTH := [0.092, 0.102, 0.118]   # one 84 mm ball fits per hook
 const FAN_BLADE := [0.026, 0.032, 0.042]   # solid wood between slits
 const FAN_DEPTH := [0.22, 0.24, 0.26]      # mouth-to-front-wall depth
 const FAN_H := 0.016                       # platform height above the marble
@@ -87,7 +87,7 @@ const BALLS_PER_COLOR := 12
 const AMMO_ROW_Z := -0.38          # Z of the ammo shelf row (behind the tray)
 const AMMO_GAP_X := 0.06           # gap from centerline to the first ball
 const AMMO_SHELF_TOP_Y := -0.13    # shelf top height (matches the tray floor)
-const RACK_PITCH := 0.048          # (60 mm ball + 12 mm gap)
+const RACK_PITCH := 0.092          # 84 mm ball + breathing room
 
 ## A ball that has slowed below this while inside a scoring pocket is caught.
 const SLOT_CAPTURE_SPEED := 0.35
@@ -996,18 +996,9 @@ func _freeze_in_place(b: SCBBall) -> void:
 	b.collision_mask = 3
 
 func _recolor_plate(sd: Dictionary, color: String) -> void:
-	var mat_v: Variant = sd.get("cup")
-	if mat_v == null or not (mat_v is StandardMaterial3D):
-		return
-	var m := mat_v as StandardMaterial3D
-	if color == "":
-		m.albedo_color = Color(0.10, 0.10, 0.11)
-		m.emission_enabled = false
-	else:
-		# 2026-09-08 user rule: "clean and classy", not electric - a claimed
-		# slot gets a flat solid team colour fill, no emission/glow.
-		m.albedo_color = CLAIM_GLOW[color]
-		m.emission_enabled = false
+	# v17 REAL-GAME RULE (owner): a claimed groove does NOT change colour -
+	# the ball sitting in it is the visual. Keep the recessed floor neutral.
+	pass
 
 
 ## Track a freshly-launched ball so the settle-detector resolves it.
