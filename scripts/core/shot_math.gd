@@ -19,7 +19,7 @@ const SLOT_Z := [1.80, 2.80, 3.80]
 const SLOT_HALF_DEPTH := 0.10
 
 ## Max reasonable shot power before the ball definitely gutters.
-const GUTTER_POWER := 4.8
+const GUTTER_POWER := 5.8
 const FAR_GUTTER_Z := 4.15   # matches table_world.GUTTER_ALTITUDE_Z
 
 ## Vertical fraction of launch power for the factory-spec parabolic toss onto

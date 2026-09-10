@@ -48,7 +48,7 @@ var _fov_punch := 0.0
 ## Slingshot conversion: screen px of pull -> m/s of launch velocity.
 const SLING_K := 0.0035
 const MIN_POWER := 0.8
-const GUTTER_POWER_LIMIT := 4.6
+const GUTTER_POWER_LIMIT := 5.6
 ## Vertical fraction of launch power: the factory-spec parabolic toss onto the
 ## raised star plates (single source of truth: ShotMath.HOP_K).
 const HOP_K := ShotMath.HOP_K
@@ -72,7 +72,7 @@ func _ready() -> void:
 		world.spawn_hand_ball("red")
 		world.spawn_hand_ball("black")
 	_give_active_ball()
-	print("SCB_MAIN_VERSION=v17-realgame-20260911 SLING_K=%s HOP_K=%s serve=%s" % [
+	print("SCB_MAIN_VERSION=v171-woodfans-20260911 SLING_K=%s HOP_K=%s serve=%s" % [
 		SLING_K, HOP_K, (active_ball.position if active_ball != null else Vector3.INF)])
 
 

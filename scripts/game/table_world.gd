@@ -64,14 +64,17 @@ const SOCKET_R := 0.037               # deprecated alias (ball r = 0.030)
 ## far 3 "B A B" (3 pt).
 const FAN_GAPS := [7, 5, 3]
 const FAN_POINTS := [1, 2, 3]
-const FAN_MOUTH := [0.092, 0.102, 0.118]   # one 84 mm ball fits per hook
+const FAN_MOUTH := [0.088, 0.092, 0.096]   # one 84 mm ball fills a hook
+                                           # snugly (owner rule: the ball
+                                           # completely fills the spike gap)
 const FAN_BLADE := [0.026, 0.032, 0.042]   # solid wood between slits
 const FAN_DEPTH := [0.22, 0.24, 0.26]      # mouth-to-front-wall depth
 const FAN_H := 0.016                       # platform height above the marble
-## Connector height tiers (2026-09-08 close-up reference): a discrete step
-## per letter group - A (centre) tallest, then B, then C, then D at the
-## outer edges - not a smooth continuous gradient.
-const PEG_H_TIERS := [0.045, 0.037, 0.029, 0.021]
+## Connector height tiers (2026-09-11 owner rule): the wooden spikes protrude
+## ABOVE the crown of a seated ball (ball radius 0.042) so an occupied gap
+## physically cannot be re-filled - a new ball clips the protruding spikes
+## and bounces off. A tier tallest, then B, C, D at the outer edges.
+const PEG_H_TIERS := [0.062, 0.056, 0.050, 0.044]   # all > ball radius 0.042
 const PLATE_H := 0.010
 const PLATE_NAMES := ["ONE", "TWO", "THREE"]
 const POCKET_X_HALF := 0.60             # playable half-width the bands span
@@ -442,18 +445,14 @@ func _build_astrolabes() -> void:
 		var half_w := fan_width(bi) * 0.5
 		var w := half_w * 2.0
 		var sy: float = surface_y_at(0.0, cz)
-		# Dark charcoal matte hardware (TableSCB.com reference photo: a solid
-		# graphite-grey plate, not pale wood) - same tone for the plank, base
-		# disc and connectors so the whole astrolabe reads as one clean piece.
+		# wooden fan hardware (owner 2026-09-11: "the fans and their spikes
+		# are made of wood as well") - warm walnut, matching the reference
 		var maple := StandardMaterial3D.new()
-		maple.albedo_color = Color(0.16, 0.16, 0.17)
-		maple.roughness = 0.8
-		# wooden connectors between slots - same charcoal tone, not a separate
-		# lighter wood (2026-09-08 user rule: "regular solid wood, clean and
-		# classy", not a contrasting accent color).
+		maple.albedo_color = Color(0.40, 0.28, 0.16)
+		maple.roughness = 0.6
 		var oak := StandardMaterial3D.new()
-		oak.albedo_color = Color(0.14, 0.14, 0.15)
-		oak.roughness = 0.8
+		oak.albedo_color = Color(0.46, 0.32, 0.18)
+		oak.roughness = 0.55
 		# one physics body per fan, tilted with the board
 		var fan := StaticBody3D.new()
 		fan.collision_layer = 1
@@ -462,8 +461,8 @@ func _build_astrolabes() -> void:
 		fan.rotation.x = -deg_to_rad(TILT_DEG)
 		# --- semi-circular base plank (the bowl) ---
 		var bmat := StandardMaterial3D.new()
-		bmat.albedo_color = Color(0.155, 0.155, 0.165)
-		bmat.roughness = 0.8
+		bmat.albedo_color = Color(0.36, 0.25, 0.14)
+		bmat.roughness = 0.6
 		bmat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		var base_mi := MeshInstance3D.new()
 		base_mi.mesh = _half_disc_mesh(half_w, 0.012)
@@ -496,21 +495,26 @@ func _build_astrolabes() -> void:
 		var center_i := float(g) * 0.5
 		for i in range(g + 1):
 			var dx := -half_w + float(i) * (w / float(g))
-			var dcs := CollisionShape3D.new()
-			var dshape := BoxShape3D.new()
-			dshape.size = Vector3(div_t, div_h, depth * 0.8)
-			dcs.shape = dshape
-			dcs.position = Vector3(dx, 0.026 + div_h * 0.5, 0.0)
-			dcs.rotation.x = 0.07
-			fan.add_child(dcs)
 			var tier := int(floor(absf(float(i) - center_i)))
 			var peg_h: float = PEG_H_TIERS[clampi(tier, 0, PEG_H_TIERS.size() - 1)]
+			# PHYSICS = peg height (2026-09-11 FIX: the collision was only
+			# div_h=0.012 while the visible peg was up to 0.045 tall - balls
+			# rolled straight THROUGH the visible spikes. Now the collision
+			# matches the visible wood so an incoming ball clips the
+			# protruding peg and bounces off an occupied/filled gap).
+			var dcs := CollisionShape3D.new()
+			var dshape := BoxShape3D.new()
+			dshape.size = Vector3(div_t, peg_h, depth * 0.8)
+			dcs.shape = dshape
+			dcs.position = Vector3(dx, 0.024 + peg_h * 0.5, 0.0)
+			dcs.rotation.x = 0.07
+			fan.add_child(dcs)
 			var dmi := MeshInstance3D.new()
 			var dmesh := BoxMesh.new()
 			dmesh.size = Vector3(div_t, peg_h, depth * 0.8)
 			dmi.mesh = dmesh
 			dmi.material_override = oak
-			dmi.position = Vector3(dx, 0.026 + peg_h * 0.5, 0.0)
+			dmi.position = dcs.position
 			dmi.rotation = dcs.rotation
 			fan.add_child(dmi)
 		# --- FRONT wall (toward the thrower): stops balls that entered

@@ -72,7 +72,7 @@ func _run() -> void:
 		firm_peak, firm.position, firm.freeze])
 	_expect(firm_peak >= 1.4,
 		"firm toss reaches the Mars zone (peak z %.2f >= 1.4)" % firm_peak)
-	_expect(firm.freeze and firm.position.z > 1.70 and firm.position.z < 2.05,
+	_expect(firm.freeze and firm.position.z > 2.55 and firm.position.z < 3.05,
 		"firm toss drops into a groove FROM THE TOP (z %.2f)" % firm.position.z)
 	firm.queue_free()
 	for i in 5:

@@ -133,7 +133,15 @@ func set_mass_properties() -> void:
 	# Godot 4: bounce/friction live on a PhysicsMaterial, not the body.
 	var pm := PhysicsMaterial.new()
 	pm.bounce = 0.30
-	pm.friction = 0.49
+	# v17.1 CRITICAL FIX (owner: "the ball should follow the complete curve"):
+	# friction 0.49 was 5.6x what the 4.99-degree slope can overcome
+	# (tan 4.99 = 0.087), so a ball that died mid-slope was HELD by static
+	# friction, got nudge-hopped, then teleported to the ammo row - the
+	# "ball disappears mid-way" bug. Real waxed marble cannot hold a ball:
+	# friction 0.06 < tan(4.99) means a live ball ALWAYS rolls back down the
+	# full curve to the tray. Captured/blocked balls are frozen, so grooves
+	# still hold their balls; low friction only affects live rolls.
+	pm.friction = 0.06
 	physics_material_override = pm
 
 
